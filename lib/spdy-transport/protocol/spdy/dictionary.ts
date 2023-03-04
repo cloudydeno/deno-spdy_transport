@@ -1,9 +1,6 @@
 'use strict'
 
-var dictionary = {}
-module.exports = dictionary
-
-dictionary[2] = Buffer.from([
+const dictionary2 = new TextEncoder().encode([
   'optionsgetheadpostputdeletetraceacceptaccept-charsetaccept-encodingaccept-',
   'languageauthorizationexpectfromhostif-modified-sinceif-matchif-none-matchi',
   'f-rangeif-unmodifiedsincemax-forwardsproxy-authorizationrangerefererteuser',
@@ -19,7 +16,7 @@ dictionary[2] = Buffer.from([
   '.1statusversionurl\x00'
 ].join(''))
 
-dictionary[3] = Buffer.from([
+const dictionary3 = new Uint8Array([
   0x00, 0x00, 0x00, 0x07, 0x6f, 0x70, 0x74, 0x69, // ....opti
   0x6f, 0x6e, 0x73, 0x00, 0x00, 0x00, 0x04, 0x68, // ons....h
   0x65, 0x61, 0x64, 0x00, 0x00, 0x00, 0x04, 0x70, // ead....p
@@ -200,4 +197,8 @@ dictionary[3] = Buffer.from([
   0x2c, 0x65, 0x6e, 0x71, 0x3d, 0x30, 0x2e // .enq.0.
 ])
 
-dictionary[3.1] = dictionary[3]
+export const dictionary = {
+  2: dictionary2,
+  3: dictionary3,
+  3.1: dictionary3,
+}

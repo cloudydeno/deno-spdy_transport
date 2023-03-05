@@ -375,6 +375,8 @@ export class Framer extends BaseFramer {
       })
     }
 
+    // if (frame.fin) throw new Error(`fin`)
+
     // debug('id=%d type=DATA', frame.id)
 
     var buffer = new WriteBuffer()
@@ -430,6 +432,7 @@ export class Framer extends BaseFramer {
     code: keyof typeof constants.error;
     extra?: string;
   }, callback?: ClassicCallback) {
+    // throw new Error('.xxxx')
     this._frame({
       type: 'RST_STREAM',
       id: frame.id,

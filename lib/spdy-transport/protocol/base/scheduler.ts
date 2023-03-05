@@ -44,9 +44,12 @@ export class Scheduler extends EventEmitter {
   }) {
     super();
 
+    this.pendingTick = true
     this.readable = new ReadableStream({
       start: (ctlr) => {
         this.ctlr = ctlr;
+        this.pendingTick = false;
+        this._read();
       }
     })
 

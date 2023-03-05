@@ -264,7 +264,11 @@ export class Connection extends EventEmitter {
       self.emit('error', err)
     })
 
+    // Hook up the streams
+    // TODO: I suppose Framer/Parser could be joined into a TransformStream?
+    const printPackets = Deno.args.includes('--print-packets');
     this.socket.readable
+      .pipeThrough(forEach(buf => printPackets ? console.log(`I ${new Date().toISOString()}\n000000 ${bytesAsHex(buf)}`) : null))
       .pipeThrough(state.parser.transformStream)
       .pipeTo(new WritableStream({
         write: this._handleFrame.bind(this),
@@ -272,7 +276,7 @@ export class Connection extends EventEmitter {
         abort: this._handleClose.bind(this),
       }));
     state.framer.readable
-      .pipeThrough(forEach(buf => console.log(`O ${new Date().toISOString()}\n000000 ${bytesAsHex(buf)}`)))
+      .pipeThrough(forEach(buf => printPackets ? console.log(`O ${new Date().toISOString()}\n000000 ${bytesAsHex(buf)}`) : null))
       .pipeTo(this.socket.writable)
 
     // Allow high-level api to catch socket errors
@@ -843,8 +847,8 @@ export class Connection extends EventEmitter {
     // state.debug('id=0 _onStreamDrain')
 
     state.framer.dump()
-    state.framer.unpipe(this.socket)
-    state.framer.resume()
+    // state.framer.unpipe(this.socket)
+    // state.framer.resume()
 
     if (this.socket.destroySoon) {
       this.socket.destroySoon()

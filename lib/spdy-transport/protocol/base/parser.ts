@@ -73,6 +73,7 @@ export abstract class Parser<Tframe> extends EventEmitter {
           ctlr.enqueue(frame[i])
         }
       } else if (frame) {
+        // console.error('_consume:', frame)
         ctlr.enqueue(frame)
       }
 

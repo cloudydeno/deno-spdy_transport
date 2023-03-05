@@ -369,6 +369,9 @@ export class Stream extends EventEmitter {
   }) {
     var state = this._spdyState
 
+    // TODO: why? for kubernetes?
+    frame.headers[':status'] ??= 0
+
     if (frame.headers[':status'] === undefined) {
       state.framer.rstFrame({ id: this.id, code: 'PROTOCOL_ERROR' })
       return
@@ -549,19 +552,6 @@ export class Stream extends EventEmitter {
     state.sent = true
     state.timeout.reset()
 
-    // GET requests should always be auto-finished
-    if (this.method === 'GET') {
-      // this.writable.close();
-      state.framer.dataFrame({
-        id: this.id,
-        priority: state.priority!.getPriority(),
-        fin: true,
-        data: new Uint8Array(0),
-      })
-      // this._writableState.ended = true
-      // this._writableStateFinished = true
-    }
-
     // TODO(indunty): ideally it should just take a stream object as an input
     var self = this
     this._hardCork()
@@ -573,8 +563,21 @@ export class Stream extends EventEmitter {
       priority: state.priority!.toJSON(),
       headers: this.headers,
       fin: this._writableStateFinished,
-    }, function (err) {
+    }, (err) => {
       self._hardUncork()
+
+      // GET requests should always be auto-finished
+      if (!state.writable) {// this.method === 'GET') {
+        // this.writable.close();
+        state.framer.dataFrame({
+          id: this.id,
+          priority: state.priority!.getPriority(),
+          fin: true,
+          data: new Uint8Array(0),
+        })
+        // this._writableState.ended = true
+        // this._writableStateFinished = true
+      }
 
       if (!callback) {
         return

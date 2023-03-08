@@ -41,26 +41,17 @@ export class Framer extends Scheduler {
     this.emit('_pushEnabled')
   }
 
-  _checkPush (callback: (err?: Error | null) => void) {
+  async _checkPush () {
     if (this.pushEnabled === null) {
-      this.once('_pushEnabled', () => {
-        this._checkPush(callback)
-      })
-      return
+      await new Promise(ok => this.once('_pushEnabled', ok));
     }
 
-    var err: Error | null = null
     if (!this.pushEnabled) {
-      err = new Error('PUSH_PROMISE disabled by other side')
+      throw new Error('PUSH_PROMISE disabled by other side')
     }
-    queueMicrotask(function () {
-      return callback(err)
-    })
   }
 
   _resetTimeout () {
-    if (this.timeout) {
-      this.timeout.reset()
-    }
+    this.timeout?.reset()
   }
 }

@@ -72,11 +72,18 @@ export class Stream extends EventEmitter {
           ctlr.error(`not writable`);
         }
       },
-      write: (chunk) => new Promise((ok, fail) => {
-        this._write(chunk, err => err ? fail(err) : ok());
-      }),
-      close: () => {
+      write: (chunk) => this._write(chunk),
+      close: async () => {
         this._writableStateFinished = true;
+        // TODO: confirm this
+        // state.timeout.set(0)
+        // this.emit('close')
+        await state.framer.dataFrame({
+          id: this.id,
+          priority: state.priority!.getPriority(),
+          fin: true,
+          data: new Uint8Array(0),
+        })
       },
     })
 
@@ -205,7 +212,7 @@ export class Stream extends EventEmitter {
     }
   }
 
-  _write (data: Uint8Array, callback: ClassicCallback) {
+  async _write (data: Uint8Array) {
     var state = this._spdyState
 
     // Send the request if it wasn't sent
@@ -214,23 +221,20 @@ export class Stream extends EventEmitter {
     // Writes should come after pending control frames (response and headers)
     if (state.corked !== 0) {
       var self = this
-      state.corkQueue.push(function () {
-        self._write(data, callback)
-      })
-      return
+      await new Promise<void>(ok => state.corkQueue.push(ok));
     }
 
     // Split DATA in chunks to prevent window from going negative
-    this._splitStart(data, _send, callback)
+    await this._splitStart(data, _send)
   }
 
-  _splitStart (data: Uint8Array, onChunk: (stream: Stream, state: typeof this._spdyState, chunk: Uint8Array, cb: ClassicCallback) => void, callback: ClassicCallback) {
-    return this._split(data, 0, onChunk, callback)
+  async _splitStart (data: Uint8Array, onChunk: (stream: Stream, state: SpdyStreamState, chunk: Uint8Array) => Promise<void>) {
+    await this._split(data, 0, onChunk)
   }
 
-  _split (data: Uint8Array, offset: number, onChunk: (stream: Stream, state: typeof this._spdyState, chunk: Uint8Array, cb: ClassicCallback) => void, callback: ClassicCallback) {
+  async _split (data: Uint8Array, offset: number, onChunk: (stream: Stream, state: SpdyStreamState, chunk: Uint8Array) => Promise<void>): Promise<void> {
     if (offset === data.length) {
-      return queueMicrotask(callback)
+      return
     }
 
     var state = this._spdyState
@@ -252,10 +256,8 @@ export class Stream extends EventEmitter {
     var self = this
 
     if (avail === 0) {
-      state.window.send.update(0, function () {
-        self._split(data, offset, onChunk, callback)
-      })
-      return
+      await new Promise(ok => state.window.send.update(0, ok));
+      return await this._split(data, offset, onChunk);
     }
 
     // Split data in chunks in a following way:
@@ -264,12 +266,10 @@ export class Stream extends EventEmitter {
 
     var chunk = data.slice(offset, offset + size)
 
-    onChunk(this, state, chunk, function (err?: Error | null) {
-      if (err) { return callback(err) }
+    await onChunk(this, state, chunk);
 
-      // Get the next chunk
-      self._split(data, offset + size, onChunk, callback)
-    })
+    // Get the next chunk
+    return await self._split(data, offset + size, onChunk);
   }
 
   _read () {
@@ -339,7 +339,7 @@ export class Stream extends EventEmitter {
   }) {
     var state = this._spdyState
 
-    state.priority.remove()
+    state.priority!.remove()
     state.priority = null
     this._initPriority(frame.priority)
 
@@ -414,7 +414,7 @@ export class Stream extends EventEmitter {
     this._maybeClose()
   }
 
-  _checkEnded (callback?: ClassicCallback) {
+  _checkEnded () {
     var state = this._spdyState
 
     var ended = false
@@ -426,16 +426,16 @@ export class Stream extends EventEmitter {
       return true
     }
 
-    if (!callback) {
-      return false
-    }
+    // if (!callback) {
+    //   return false
+    // }
 
-    var err = new Error('Ended stream can\'t send frames')
-    queueMicrotask(function () {
-      callback(err)
-    })
+    throw new Error('Ended stream can\'t send frames')
+    // queueMicrotask(function () {
+    //   callback(err)
+    // })
 
-    return false
+    // return false
   }
 
   _maybeClose () {
@@ -507,12 +507,12 @@ export class Stream extends EventEmitter {
     }
   }
 
-  _sendPush (status: number, response: SpdyHeaders, callback: ClassicCallback) {
+  async _sendPush (status: number, response: SpdyHeaders) {
     var self = this
     var state = this._spdyState
 
     this._hardCork()
-    state.framer.pushFrame({
+    await state.framer.pushFrame({
       id: this.parent!.id,
       promisedId: this.id,
       priority: state.priority!.toJSON(),
@@ -522,11 +522,8 @@ export class Stream extends EventEmitter {
       status: status,
       headers: this.headers,
       response: response
-    }, function (err) {
-      self._hardUncork()
-
-      callback(err)
     })
+    self._hardUncork()
   }
 
   _wasSent () {
@@ -536,17 +533,11 @@ export class Stream extends EventEmitter {
 
   // Public API
 
-  send (callback?: ClassicCallback) {
+  async send () {
     var state = this._spdyState
 
     if (state.sent) {
-      var err = new Error('Stream was already sent')
-      queueMicrotask(function () {
-        if (callback) {
-          callback(err)
-        }
-      })
-      return
+      throw new Error('Stream was already sent')
     }
 
     state.sent = true
@@ -555,7 +546,7 @@ export class Stream extends EventEmitter {
     // TODO(indunty): ideally it should just take a stream object as an input
     var self = this
     this._hardCork()
-    state.framer.requestFrame({
+    await state.framer.requestFrame({
       id: this.id,
       method: this.method,
       path: this.path,
@@ -563,38 +554,31 @@ export class Stream extends EventEmitter {
       priority: state.priority!.toJSON(),
       headers: this.headers,
       fin: this._writableStateFinished,
-    }, (err) => {
-      self._hardUncork()
+    });
+    self._hardUncork()
 
-      // GET requests should always be auto-finished
-      if (!state.writable) {// this.method === 'GET') {
-        // this.writable.close();
-        state.framer.dataFrame({
-          id: this.id,
-          priority: state.priority!.getPriority(),
-          fin: true,
-          data: new Uint8Array(0),
-        })
-        // this._writableState.ended = true
-        // this._writableStateFinished = true
-      }
-
-      if (!callback) {
-        return
-      }
-
-      callback(err)
-    })
+    // GET requests should always be auto-finished
+    if (!state.writable) {// this.method === 'GET') {
+      // this.writable.close();
+      await state.framer.dataFrame({
+        id: this.id,
+        priority: state.priority!.getPriority(),
+        fin: true,
+        data: new Uint8Array(0),
+      })
+      // this._writableState.ended = true
+      // this._writableStateFinished = true
+    }
   }
 
-  respond (status: keyof typeof constants.statusReason, headers: SpdyHeaders, callback: ClassicCallback) {
+  async respond (status: keyof typeof constants.statusReason, headers: SpdyHeaders, callback: ClassicCallback) {
     var self = this
     var state = this._spdyState
     assert(!state.request, 'Can\'t respond on request')
 
     state.timeout.reset()
 
-    if (!this._checkEnded(callback)) { return }
+    this._checkEnded();
 
     var frame = {
       id: this.id,
@@ -602,10 +586,8 @@ export class Stream extends EventEmitter {
       headers: headers
     }
     this._hardCork()
-    state.framer.responseFrame(frame, function (err) {
-      self._hardUncork()
-      if (callback) { callback(err) }
-    })
+    await state.framer.responseFrame(frame);
+    self._hardUncork()
   }
 
   setWindow (size: number) {
@@ -613,9 +595,7 @@ export class Stream extends EventEmitter {
 
     state.timeout.reset()
 
-    if (!this._checkEnded()) {
-      return
-    }
+    this._checkEnded();
 
     // state.debug('id=%d force window max=%d', this.id, size)
     state.window.recv.setMax(size)
@@ -630,62 +610,43 @@ export class Stream extends EventEmitter {
     state.window.recv.update(delta)
   }
 
-  sendHeaders (headers: SpdyHeaders, callback: ClassicCallback) {
+  async sendHeaders (headers: SpdyHeaders) {
     var self = this
     var state = this._spdyState
 
     state.timeout.reset()
 
-    if (!this._checkEnded(callback)) {
-      return
-    }
+    this._checkEnded();
 
     // Request wasn't yet send, coalesce headers
     if (!state.sent) {
       this.headers = Object.assign({}, this.headers)
       Object.assign(this.headers, headers)
-      queueMicrotask(function () {
-        if (callback) {
-          callback(null)
-        }
-      })
       return
     }
 
     this._hardCork()
-    state.framer.headersFrame({
+    await state.framer.headersFrame({
       id: this.id,
       headers: headers
-    }, function (err) {
-      self._hardUncork()
-      if (callback) { callback(err) }
-    })
+    });
+    self._hardUncork()
   }
 
   destroy () {
     this.abort()
   }
 
-  abort (code?: keyof typeof constants.error, callback?: ClassicCallback) {
+  async abort (code?: keyof typeof constants.error) {
     var state = this._spdyState
 
-    // .abort(callback)
-    // if (typeof code === 'function') {
-    //   callback = code
-    //   code = null
-    // }
-
-    if (this._readableStateEnded && this._writableStateFinished) {
+    if ((!this._spdyState.readable || this._readableStateEnded) && this._writableStateFinished) {
       // state.debug('id=%d already closed', this.id)
-      if (callback) {
-        queueMicrotask(callback)
-      }
       return
     }
 
     if (state.aborted) {
       // state.debug('id=%d already aborted', this.id)
-      if (callback) { queueMicrotask(callback) }
       return
     }
 
@@ -701,13 +662,9 @@ export class Stream extends EventEmitter {
       code: abortCode
     })
 
-    var self = this
-    queueMicrotask(function () {
-      if (callback) {
-        callback(null)
-      }
-      self.emit('close', new Error('Aborted, code: ' + abortCode))
-    })
+    await new Promise<void>(ok => queueMicrotask(ok));
+
+    this.emit('close', new Error('Aborted, code: ' + abortCode))
   }
 
   setPriority (info: PriorityJson) {
@@ -715,9 +672,7 @@ export class Stream extends EventEmitter {
 
     state.timeout.reset()
 
-    if (!this._checkEnded()) {
-      return
-    }
+    this._checkEnded();
 
     // state.debug('id=%d priority change', this.id, info)
 
@@ -730,26 +685,18 @@ export class Stream extends EventEmitter {
     state.framer.priorityFrame(frame)
   }
 
-  pushPromise (uri: CreatePushOptions, callback: ClassicCallback<Stream>) {
-    if (!this._checkEnded(callback)) {
-      return
-    }
+  async pushPromise (uri: CreatePushOptions, callback: ClassicCallback<Stream>) {
+    this._checkEnded();
 
     var self = this
     this._hardCork()
-    var push = this.connection.pushPromise(this, uri, function (err) {
+
+    try {
+      var push = await this.connection.pushPromise(this, uri);
+      push._hardCork()
+    } finally {
       self._hardUncork()
-      if (!err) {
-        push._hardUncork()
-      }
-
-      if (callback) {
-        return callback(err, push)
-      }
-
-      if (err) { push.emit('error', err) }
-    })
-    push._hardCork()
+    }
 
     return push
   }
@@ -766,44 +713,34 @@ export class Stream extends EventEmitter {
   }
 }
 
-function checkAborted (stream: Stream, state: SpdyStreamState, callback: ClassicCallback) {
+function checkAborted (stream: Stream, state: SpdyStreamState) {
   if (state.aborted) {
     // state.debug('id=%d abort write', stream.id)
-    queueMicrotask(function () {
-      callback(new Error('Stream write aborted'))
-    })
-    return true
+    throw new Error('Stream write aborted');
   }
 
-  return false
+  // return false
 }
 
-function _send (stream: Stream, state: SpdyStreamState, data: Uint8Array, callback: ClassicCallback) {
-  if (checkAborted(stream, state, callback)) {
-    return
-  }
+async function _send (stream: Stream, state: SpdyStreamState, data: Uint8Array) {
+  checkAborted(stream, state);
 
   // state.debug('id=%d presend=%d', stream.id, data.length)
 
   state.timeout.reset()
 
-  state.window.send.update(-data.length, function () {
-    if (checkAborted(stream, state, callback)) {
-      return
-    }
+  await new Promise(ok => state.window.send.update(-data.length, ok));
+  checkAborted(stream, state);
 
     // state.debug('id=%d send=%d', stream.id, data.length)
 
-    state.timeout.reset()
+  state.timeout.reset()
 
-    state.framer.dataFrame({
-      id: stream.id,
-      priority: state.priority!.getPriority(),
-      fin: false,
-      data: data
-    }, function (err) {
-      // state.debug('id=%d postsend=%d', stream.id, data.length)
-      callback(err)
-    })
+  await state.framer.dataFrame({
+    id: stream.id,
+    priority: state.priority!.getPriority(),
+    fin: false,
+    data: data
   })
+  // state.debug('id=%d postsend=%d', stream.id, data.length)
 }

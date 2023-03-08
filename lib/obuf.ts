@@ -2,14 +2,6 @@ export class OffsetBuffer {
   offset: number;
   size: number;
   buffers: Uint8Array[];
-// peekInt8: () => any;
-// readInt8: () => any;
-// readInt16BE: () => any;
-// readInt16LE: () => any;
-// readInt24BE: () => any;
-// readInt24LE: () => any;
-// readInt32BE: () => any;
-// readInt32LE: () => any;
 
   constructor() {
     this.offset = 0;

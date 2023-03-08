@@ -44,15 +44,6 @@ export class Scheduler extends EventEmitter {
   }) {
     super();
 
-    this.pendingTick = true
-    this.readable = new ReadableStream({
-      start: (ctlr) => {
-        this.ctlr = ctlr;
-        this.pendingTick = false;
-        this._read();
-      }
-    })
-
     // Pretty big window by default
     this.windowSize = options?.window ?? 0.25
     // ... but that isn't a Window instance!??!
@@ -62,6 +53,15 @@ export class Scheduler extends EventEmitter {
     this.list = []
     this.count = 0
     this.pendingTick = false
+
+    this.pendingTick = true
+    this.readable = new ReadableStream({
+      start: (ctlr) => {
+        this.ctlr = ctlr;
+        this.pendingTick = false;
+        this._read();
+      }
+    })
   }
 
   // Just for testing, really
@@ -115,10 +115,10 @@ export class Scheduler extends EventEmitter {
     this.pendingTick = true
 
     var self = this
-    queueMicrotask(function () {
+    // queueMicrotask(function () {
       self.pendingTick = false
       self.tick()
-    })
+    // })
   }
 
   tick () {

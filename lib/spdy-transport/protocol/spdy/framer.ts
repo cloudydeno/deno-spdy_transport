@@ -48,9 +48,7 @@ export class Framer extends BaseFramer {
     // http2-only
   }
 
-  headersToDict (headers: SpdyHeaders,
-    preprocess: null | ((headers: SpdyHeaders) => void),
-    callback: ClassicCallback<Uint8Array[]>) {
+  async headersToDict (headers: SpdyHeaders, preprocess: null | ((headers: SpdyHeaders) => void)) {
     function stringify (value: SpdyHeaderValue | undefined) {
       if (value !== undefined) {
         if (Array.isArray(value)) {
@@ -127,15 +125,17 @@ export class Framer extends BaseFramer {
     }, this)
 
     assert(this.compress !== null, 'Framer version not initialized')
-    this.compress.write(block.render(), callback)
+    const chunks = await new Promise<Uint8Array[]>((ok, fail) => {
+      this.compress!.write(block.render(), (err, out) => err ? fail(err) : ok(out!));
+    });
+    return chunks;
   }
 
-  _frame (frame: FrameIds, body: (buf: WriteBuffer) => void, callback?: ClassicCallback) {
+  async _frame (frame: FrameIds, body: (buf: WriteBuffer) => void) {
     if (!this.version) {
-      this.on('version', () => {
-        this._frame(frame, body, callback)
-      })
-      return
+      console.error('hmm 2')
+      await new Promise(ok => this.once('version', ok));
+      assert(this.version);
     }
 
     // debug('id=%d type=%s', frame.id, frame.type)
@@ -154,20 +154,22 @@ export class Framer extends BaseFramer {
 
     var chunks = buffer.render()
     assertEquals(typeof frame.id, "number");
-    var toWrite: WritableData = {
-      stream: frame.id,
-      priority: false,
-      chunks: chunks,
-      callback: callback
-    }
+    await new Promise(ok => {
+      var toWrite: WritableData = {
+        stream: frame.id,
+        priority: false,
+        chunks: chunks,
+        callback: ok
+      }
 
-    this._resetTimeout()
-    this.schedule(toWrite)
+      this._resetTimeout()
+      this.schedule(toWrite)
+    });
 
     return chunks
   }
 
-  _synFrame (frame: SpdyRequestOptions, callback: ClassicCallback) {
+  async _synFrame (frame: SpdyRequestOptions) {
     var self = this
 
     if (!frame.path) {
@@ -201,44 +203,36 @@ export class Framer extends BaseFramer {
       }
     }
 
-    this.headersToDict(frame.headers, preprocess, function (err, chunks) {
-      if (err || !chunks) {
-        if (callback) {
-          return callback(err ?? new Error(`no chunks`))
-        } else {
-          return self.emit('error', err ?? new Error(`no chunks`))
-        }
+    const chunks = await this.headersToDict(frame.headers, preprocess);
+
+    await self._frame({
+      type: 'SYN_STREAM',
+      id: frame.id,
+      flags: frame.fin ? constants.flags.FLAG_FIN : 0
+    }, function (buf) {
+      buf.reserve(10)
+
+      buf.writeUInt32BE(frame.id & 0x7fffffff)
+      buf.writeUInt32BE((frame.associated ?? 0) & 0x7fffffff)
+
+      var weight = (frame.priority && frame.priority.weight) ||
+                  constants.DEFAULT_WEIGHT
+
+      // We only have 3 bits for priority in SPDY, try to fit it into this
+      var priority = weightToPriority(weight)
+      buf.writeUInt8(priority << 5)
+
+      // CREDENTIALS slot
+      buf.writeUInt8(0)
+
+      for (const chunk of chunks) {
+        buf.copyFrom(chunk)
       }
-
-      self._frame({
-        type: 'SYN_STREAM',
-        id: frame.id,
-        flags: frame.fin ? constants.flags.FLAG_FIN : 0
-      }, function (buf) {
-        buf.reserve(10)
-
-        buf.writeUInt32BE(frame.id & 0x7fffffff)
-        buf.writeUInt32BE((frame.associated ?? 0) & 0x7fffffff)
-
-        var weight = (frame.priority && frame.priority.weight) ||
-                    constants.DEFAULT_WEIGHT
-
-        // We only have 3 bits for priority in SPDY, try to fit it into this
-        var priority = weightToPriority(weight)
-        buf.writeUInt8(priority << 5)
-
-        // CREDENTIALS slot
-        buf.writeUInt8(0)
-
-        for (const chunk of chunks) {
-          buf.copyFrom(chunk)
-        }
-      }, callback)
     })
   }
 
-  requestFrame (frame: SpdyRequestOptions, callback: ClassicCallback) {
-    this._synFrame({
+  async requestFrame (frame: SpdyRequestOptions) {
+    await this._synFrame({
       id: frame.id,
       fin: frame.fin,
       associated: 0,
@@ -249,15 +243,15 @@ export class Framer extends BaseFramer {
       path: frame.path,
       priority: frame.priority,
       headers: frame.headers
-    }, callback)
+    })
   }
 
-  responseFrame (frame: {
+  async responseFrame (frame: {
     id: number;
     reason?: string;
     status: keyof typeof constants.statusReason;
     headers: SpdyHeaders;
-  }, callback: ClassicCallback) {
+  }) {
     var self = this
 
     var reason = frame.reason
@@ -265,7 +259,7 @@ export class Framer extends BaseFramer {
       reason = constants.statusReason[frame.status]
     }
 
-    function preprocess (headers: SpdyHeaders) {
+    const chunks = await this.headersToDict(frame.headers, headers => {
       if (self.version === 2) {
         headers.status = frame.status + ' ' + reason
         headers.version = 'HTTP/1.1'
@@ -273,106 +267,87 @@ export class Framer extends BaseFramer {
         headers[':status'] = frame.status + ' ' + reason
         headers[':version'] = 'HTTP/1.1'
       }
-    }
+    });
 
-    this.headersToDict(frame.headers, preprocess, function (err, chunks) {
-      if (err || !chunks) {
-        if (callback) {
-          return callback(err ?? new Error('no chunks'))
-        } else {
-          return self.emit('error', err ?? new Error('no chunks'))
-        }
+    await this._frame({
+      type: 'SYN_REPLY',
+      id: frame.id,
+      flags: 0
+    }, function (buf) {
+      buf.reserve(self.version === 2 ? 6 : 4)
+
+      buf.writeUInt32BE(frame.id & 0x7fffffff)
+
+      // Unused data
+      if (self.version === 2) {
+        buf.writeUInt16BE(0)
       }
 
-      self._frame({
-        type: 'SYN_REPLY',
-        id: frame.id,
-        flags: 0
-      }, function (buf) {
-        buf.reserve(self.version === 2 ? 6 : 4)
-
-        buf.writeUInt32BE(frame.id & 0x7fffffff)
-
-        // Unused data
-        if (self.version === 2) {
-          buf.writeUInt16BE(0)
-        }
-
-        for (var i = 0; i < chunks.length; i++) {
-          buf.copyFrom(chunks[i])
-        }
-      }, callback)
+      for (var i = 0; i < chunks.length; i++) {
+        buf.copyFrom(chunks[i])
+      }
     })
   }
 
-  pushFrame (frame: Pick<SpdyRequestOptions, Exclude<keyof SpdyRequestOptions, 'associated'>> & {
+  async pushFrame (frame: Pick<SpdyRequestOptions, Exclude<keyof SpdyRequestOptions, 'associated'>> & {
     promisedId: number;
     response: SpdyHeaders;
-  }, callback: ClassicCallback) {
-    var self = this
+  }) {
 
-    this._checkPush(function (err) {
-      if (err) { return callback(err) }
+    await this._checkPush()
 
-      self._synFrame({
-        id: frame.promisedId,
-        associated: frame.id,
-        method: frame.method,
-        status: frame.status || 200,
-        version: frame.version,
-        scheme: frame.scheme,
-        host: frame.host,
-        path: frame.path,
-        priority: frame.priority,
+    await this._synFrame({
+      id: frame.promisedId,
+      associated: frame.id,
+      method: frame.method,
+      status: frame.status || 200,
+      version: frame.version,
+      scheme: frame.scheme,
+      host: frame.host,
+      path: frame.path,
+      priority: frame.priority,
 
-        // Merge everything together, there is no difference in SPDY protocol
-        headers: Object.assign(Object.assign({}, frame.headers), frame.response)
-      }, callback)
+      // Merge everything together, there is no difference in SPDY protocol
+      headers: Object.assign(Object.assign({}, frame.headers), frame.response)
     })
   }
 
-  headersFrame (frame: {
+  async headersFrame (frame: {
     headers: SpdyHeaders;
     id: number;
-  }, callback: ClassicCallback) {
+  }) {
     var self = this
 
-    this.headersToDict(frame.headers, null, function (err, chunks) {
-      if (err || !chunks) {
-        if (callback) { return callback(err ?? new Error('no chunks')) } else {
-          return self.emit('error', err ?? new Error('no chunks'))
-        }
+    const chunks = await this.headersToDict(frame.headers, null);
+
+    await self._frame({
+      type: 'HEADERS',
+      id: frame.id,
+      priority: false,
+      flags: 0
+    }, function (buf) {
+      buf.reserve(4 + (self.version === 2 ? 2 : 0))
+      buf.writeUInt32BE(frame.id & 0x7fffffff)
+
+      // Unused data
+      if (self.version === 2) { buf.writeUInt16BE(0) }
+
+      for (var i = 0; i < chunks.length; i++) {
+        buf.copyFrom(chunks[i])
       }
-
-      self._frame({
-        type: 'HEADERS',
-        id: frame.id,
-        priority: false,
-        flags: 0
-      }, function (buf) {
-        buf.reserve(4 + (self.version === 2 ? 2 : 0))
-        buf.writeUInt32BE(frame.id & 0x7fffffff)
-
-        // Unused data
-        if (self.version === 2) { buf.writeUInt16BE(0) }
-
-        for (var i = 0; i < chunks.length; i++) {
-          buf.copyFrom(chunks[i])
-        }
-      }, callback)
     })
   }
 
-  dataFrame (frame: {
+  async dataFrame (frame: {
     id: number;
     fin: boolean;
     data: Uint8Array;
     priority: false | number;
-  }, callback?: ClassicCallback) {
+  }) {
     if (!this.version) {
-      return this.on('version', () => {
-        this.dataFrame(frame, callback)
-      })
+      console.error('hmm 1')
+      await new Promise(ok => this.once('version', ok));
+      assert(this.version)
     }
 
     // if (frame.fin) throw new Error(`fin`)
@@ -388,33 +363,35 @@ export class Framer extends BaseFramer {
     buffer.copyFrom(frame.data)
 
     var chunks = buffer.render()
-    var toWrite: WritableData = {
-      stream: frame.id,
-      priority: frame.priority,
-      chunks: chunks,
-      callback: callback
-    }
+    await new Promise(ok => {
+      var toWrite: WritableData = {
+        stream: frame.id,
+        priority: frame.priority,
+        chunks: chunks,
+        callback: ok
+      }
 
-    var self = this
-    this._resetTimeout()
-
-    var bypass = this.version < 3.1
-    this.window.send.update(-frame.data.length, bypass ? undefined : function () {
-      self._resetTimeout()
-      self.schedule(toWrite)
-    })
-
-    if (bypass) {
+      var self = this
       this._resetTimeout()
-      this.schedule(toWrite)
-    }
+
+      var bypass = (this.version ?? 0) < 3.1
+      this.window.send.update(-frame.data.length, bypass ? undefined : function () {
+        self._resetTimeout()
+        self.schedule(toWrite)
+      })
+
+      if (bypass) {
+        this._resetTimeout()
+        this.schedule(toWrite)
+      }
+    });
   }
 
-  pingFrame (frame: {
+  async pingFrame (frame: {
     ack?: boolean; // TODO: this is not transmitted!
     opaque: Uint8Array,
-  }, callback?: ClassicCallback) {
-    this._frame({
+  }) {
+    await this._frame({
       type: 'PING',
       id: 0,
       flags: 0
@@ -424,16 +401,15 @@ export class Framer extends BaseFramer {
       var opaque = frame.opaque
       buf.copyFrom(opaque, opaque.length - 4)
       // buf.writeUInt32BE(opaque.readUInt32BE(opaque.length - 4, true))
-    }, callback)
+    })
   }
 
-  rstFrame (frame: {
+  async rstFrame (frame: {
     id: number;
     code: keyof typeof constants.error;
     extra?: string;
-  }, callback?: ClassicCallback) {
-    // throw new Error('.xxxx')
-    this._frame({
+  }) {
+    await this._frame({
       type: 'RST_STREAM',
       id: frame.id,
       flags: 0
@@ -445,17 +421,18 @@ export class Framer extends BaseFramer {
       // Status Code
       buf.writeUInt32BE(constants.error[frame.code])
 
+
       // Extra debugging information
       if (frame.extra) {
         buf.write(frame.extra)
       }
-    }, callback)
+    })
   }
 
   prefaceFrame () {
   }
 
-  settingsFrame (options: Record<SettingsKey,number>, callback?: ClassicCallback) {
+  async settingsFrame (options: Record<SettingsKey,number>, callback?: ClassicCallback) {
     var self = this
 
     var key = this.version + '/' + JSON.stringify(options)
@@ -488,7 +465,7 @@ export class Framer extends BaseFramer {
       }
     }
 
-    var frame = this._frame({
+    var frame = await this._frame({
       type: 'SETTINGS',
       id: 0,
       flags: 0
@@ -506,24 +483,21 @@ export class Framer extends BaseFramer {
         } else { buf.writeUInt32BE(flag | param.key) }
         buf.writeUInt32BE(param.value & 0x7fffffff)
       })
-    }, callback)
+    })
 
     if (frame) {
       Framer.settingsCache[key] = frame
     }
   }
 
-  ackSettingsFrame (callback?: ClassicCallback) {
-    if (callback) {
-      queueMicrotask(callback)
-    }
+  async ackSettingsFrame () {
   }
 
-  windowUpdateFrame (frame: {
+  async windowUpdateFrame (frame: {
     id: number;
     delta: number;
-  }, callback?: ClassicCallback) {
-    this._frame({
+  }) {
+    await this._frame({
       type: 'WINDOW_UPDATE',
       id: frame.id,
       flags: 0
@@ -535,15 +509,15 @@ export class Framer extends BaseFramer {
 
       // Delta
       buf.writeInt32BE(frame.delta)
-    }, callback)
+    })
   }
 
-  goawayFrame (frame: {
+  async goawayFrame (frame: {
     lastId: number;
     code: keyof typeof constants.goaway;
     extra?: string; // TODO: not written
-  }, callback: ClassicCallback) {
-    this._frame({
+  }) {
+    await this._frame({
       type: 'GOAWAY',
       id: 0,
       flags: 0
@@ -554,29 +528,26 @@ export class Framer extends BaseFramer {
       buf.writeUInt32BE(frame.lastId & 0x7fffffff)
       // Status
       buf.writeUInt32BE(constants.goaway[frame.code])
-    }, callback)
+    })
   }
 
-  priorityFrame (frame: {
+  async priorityFrame (frame: {
     priority: PriorityJson;
-  }, callback?: ClassicCallback) {
+  }) {
     // No such thing in SPDY
-    if (callback) {
-      queueMicrotask(callback)
-    }
   }
 
-  xForwardedFor (frame: {
+  async xForwardedFor (frame: {
     host: string;
-  }, callback?: ClassicCallback) {
-    this._frame({
+  }) {
+    await this._frame({
       type: 'X_FORWARDED_FOR',
       id: 0,
       flags: 0
     }, function (buf) {
       buf.writeUInt32BE(Buffer.byteLength(frame.host))
       buf.write(frame.host)
-    }, callback)
+    })
   }
 
   static settingsCache: Record<string, Uint8Array[]> = {};

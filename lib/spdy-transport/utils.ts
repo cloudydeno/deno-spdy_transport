@@ -110,6 +110,7 @@ export class LockStream {
     } else { queueMicrotask(next) }
 
     if ((this.stream as any).execute) {
+      console.error(`stream execute`);
       (this.stream as any).execute(function (err?: Error | null) {
         if (err) { return done(err) }
       })

@@ -301,7 +301,8 @@ export class Connection extends EventEmitter {
   }
 
   _handleClose(reason?: string) {
-    console.error({reason})
+    console.error('_handleClose', {reason})
+    // throw new Error('...sss')
     var err: Error & {code?: string} | null = null;
     if (reason) {
       err = new Error('socket hang up: '+reason)
@@ -662,7 +663,7 @@ export class Connection extends EventEmitter {
       var stream = state.stream.map[id]
       var window = stream._spdyState.window
 
-      window.send.updateMax(settings.initial_window_size)
+      window.send.updateMax(settings.initial_window_size!)
     })
   }
 
@@ -722,57 +723,23 @@ export class Connection extends EventEmitter {
     return this._spdyState.counters[name]
   }
 
-  reserveStream (uri: CreateStreamOptions, callback: ClassicCallback<Stream>) {
+  reserveStream (uri: CreateStreamOptions) {
     var stream = this._createStream(uri)
 
     // GOAWAY
     if (this._isGoaway(stream.id)) {
-      var err = new Error('Can\'t send request after GOAWAY')
-      queueMicrotask(function () {
-        if (callback) { callback(err) } else {
-          stream.emit('error', err)
-        }
-      })
-      return stream
-    }
-
-    if (callback) {
-      queueMicrotask(function () {
-        callback(null, stream)
-      })
+      throw new Error('Can\'t send request after GOAWAY');
     }
 
     return stream
   }
 
-  request (uri: CreateStreamOptions, callback: ClassicCallback<Stream>) {
-    var stream = this.reserveStream(uri, function (err) {
-      if (err) {
-        if (callback) {
-          callback(err)
-        } else {
-          stream.emit('error', err)
-        }
-        return
-      }
+  async request (uri: CreateStreamOptions) {
+    var stream = this.reserveStream(uri);
 
-      if (stream._wasSent()) {
-        if (callback) {
-          callback(null, stream)
-        }
-        return
-      }
-
-      stream.send(function (err) {
-        if (err) {
-          if (callback) { return callback(err) } else { return stream.emit('error', err) }
-        }
-
-        if (callback) {
-          callback(null, stream)
-        }
-      })
-    })
+    if (!stream._wasSent()) {
+      await stream.send();
+    }
 
     return stream
   }
@@ -789,7 +756,7 @@ export class Connection extends EventEmitter {
     }
   }
 
-  _goaway (params: {
+  async _goaway (params: {
     lastId: number;
     code: keyof typeof spdyProtocol.constants.goaway;
     send?: boolean;
@@ -813,32 +780,25 @@ export class Connection extends EventEmitter {
       stream.emit('error', new Error('New stream after GOAWAY'))
     })
 
-    function finish () {
-      // Destroy socket if there are no streams
-      if (state.stream.count === 0 || params.code !== 'OK') {
-        // No further frames should be processed
-        state.parser.kill()
-
-        queueMicrotask(function () {
-          var err = new Error('Fatal error: ' + params.code)
-          self._onStreamDrain(err)
-        })
-        return
-      }
-
-      self.on('_streamDrain', self._onStreamDrain)
-    }
-
     if (params.send) {
       // Make sure that GOAWAY frame is sent before dumping framer
-      state.framer.goawayFrame({
+      await state.framer.goawayFrame({
         lastId: params.lastId,
         code: params.code,
         extra: params.extra
-      }, finish)
-    } else {
-      finish()
+      })
     }
+
+    // Destroy socket if there are no streams
+    if (state.stream.count === 0 || params.code !== 'OK') {
+      // No further frames should be processed
+      state.parser.kill()
+
+      self._onStreamDrain(new Error('Fatal error: ' + params.code))
+      return
+    }
+
+    self.on('_streamDrain', self._onStreamDrain)
   }
 
   _onStreamDrain (error?: Error | null) {
@@ -898,7 +858,7 @@ export class Connection extends EventEmitter {
     }
   }
 
-  pushPromise (parent: Stream, uri: CreatePushOptions, callback: ClassicCallback<Stream>) {
+  async pushPromise (parent: Stream, uri: CreatePushOptions) {
     var state = this._spdyState
 
     var stream = this._createStream({
@@ -912,44 +872,17 @@ export class Connection extends EventEmitter {
       readable: false
     })
 
-    var err: Error | null = null;
-
     // TODO(indutny): deduplicate this logic somehow
     if (this._isGoaway(stream.id)) {
-      err = new Error('Can\'t send PUSH_PROMISE after GOAWAY')
-
-      queueMicrotask(function () {
-        if (callback) {
-          callback(err)
-        } else {
-          stream.emit('error', err)
-        }
-      })
-      return stream
+      throw new Error('Can\'t send PUSH_PROMISE after GOAWAY')
     }
 
     if (uri.push && !state.acceptPush) {
-      err = new Error(
+      throw new Error(
         'Can\'t send PUSH_PROMISE, other side won\'t accept it')
-      queueMicrotask(function () {
-        if (callback) { callback(err) } else {
-          stream.emit('error', err)
-        }
-      })
-      return stream
     }
 
-    stream._sendPush(uri.status, uri.response, function (err) {
-      if (!callback) {
-        if (err) {
-          stream.emit('error', err)
-        }
-        return
-      }
-
-      if (err) { return callback(err) }
-      callback(null, stream)
-    })
+    await stream._sendPush(uri.status, uri.response)
 
     return stream
   }

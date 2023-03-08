@@ -2,14 +2,7 @@
 export * as utils from './spdy-transport/utils.ts'
 
 // Export parser&framer
-import * as base from './spdy-transport/protocol/base/index.ts'
-import * as spdy from './spdy-transport/protocol/spdy/index.ts'
-// export * as http2 from './spdy-transport/protocol/http2/index.js'
-export const protocol = {
-  base,
-  spdy,
-  // http2,
-}
+export { protocol } from './spdy-transport/protocol/index.ts'
 
 // Window
 export { Window } from './spdy-transport/window.ts'

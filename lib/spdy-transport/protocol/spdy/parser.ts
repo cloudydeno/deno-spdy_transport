@@ -1,12 +1,12 @@
-import { FRAME_HEADER_SIZE, flags as flagConstants, error, DEFAULT_WEIGHT, errorByCode, goawayByCode } from './constants.ts';
+import { FRAME_HEADER_SIZE, flags as flagConstants, DEFAULT_WEIGHT, errorByCode, goawayByCode } from './constants.ts';
 
 import { Parser as BaseParser } from '../base/parser.ts'
 import { addHeaderLine, priorityToWeight, ProtocolError, weightToPriority } from "../base/utils.ts"
-import { ClassicCallback, DataFrame, FrameCallback, FrameHeader, FrameUnion, RstFrame, SettingsKey, SpdyHeaders } from '../types.ts';
+import { FrameHeader, FrameUnion, RstFrame, SettingsKey, SpdyHeaders } from '../types.ts';
 import { assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { OffsetBuffer } from "../../../obuf.ts";
 
-type Frames = null | FrameUnion | Array<FrameUnion>;
+type Frames = Array<FrameUnion>;
 
 export class Parser extends BaseParser<FrameUnion> {
   isServer: boolean;
@@ -27,10 +27,6 @@ export class Parser extends BaseParser<FrameUnion> {
     this.pendingHeader = null
   }
 
-  static create (options: ConstructorParameters<typeof Parser>[0]) {
-    return new Parser(options)
-  }
-
   setMaxFrameSize (size: number) {
     // http2-only
   }
@@ -46,7 +42,7 @@ export class Parser extends BaseParser<FrameUnion> {
   async execute (buffer: OffsetBuffer) {
     if (this.state === 'frame-head') {
       await this.onFrameHead(buffer);
-      return null;
+      if (this.waiting > 0) return [];
     }
 
     assert(this.state === 'frame-body' && this.pendingHeader !== null)
@@ -71,14 +67,14 @@ export class Parser extends BaseParser<FrameUnion> {
     }
 
     // DATA frame
-    return {
+    return [{
       type: 'DATA',
       id: header!.id!,
 
       // Partial DATA can't be FIN
       fin: false,
       data: buffer.take(buffer.size)
-    };
+    }];
   }
 
   async onFrameHead (buffer: OffsetBuffer) {
@@ -129,12 +125,12 @@ export class Parser extends BaseParser<FrameUnion> {
           'Invalid stream id for DATA');
       }
 
-      return {
+      return [{
         type: 'DATA',
         id: header.id!,
         fin: (header.flags & flagConstants.FLAG_FIN) !== 0,
         data: buffer.take(buffer.size)
-      };
+      }];
     }
 
     if (header.type === 0x01 || header.type === 0x02) { // SYN_STREAM or SYN_REPLY
@@ -144,7 +140,7 @@ export class Parser extends BaseParser<FrameUnion> {
     } else if (header.type === 0x04) { // SETTINGS
       return this.onSettingsFrame(buffer)
     } else if (header.type === 0x05) {
-      return { type: 'NOOP' };
+      return [{ type: 'NOOP' }];
     } else if (header.type === 0x06) { // PING
       return this.onPingFrame(buffer)
     } else if (header.type === 0x07) { // GOAWAY
@@ -221,7 +217,7 @@ export class Parser extends BaseParser<FrameUnion> {
     }
 
     if (!isPush) {
-      return {
+      return [{
         type: 'HEADERS',
         id: id,
         priority: priorityInfo,
@@ -229,7 +225,7 @@ export class Parser extends BaseParser<FrameUnion> {
         writable: !unidir,
         headers: headers,
         path: path
-      };
+      }];
     }
 
     if (stream && !headers[':status']) {
@@ -269,7 +265,7 @@ export class Parser extends BaseParser<FrameUnion> {
 
     const headers = await this.parseKVs(body);
 
-    return {
+    return [{
       type: 'HEADERS',
       priority: {
         parent: 0,
@@ -281,7 +277,7 @@ export class Parser extends BaseParser<FrameUnion> {
       writable: true,
       path: undefined,
       headers: headers
-    }
+    }]
   }
 
   async parseKVs (buffer: OffsetBuffer) {
@@ -314,7 +310,7 @@ export class Parser extends BaseParser<FrameUnion> {
       if (!buffer.has(len)) { return null }
 
       var value = buffer.take(len)
-      return value.toString()
+      return new TextDecoder().decode(value)
     }
 
     while (count > 0) {
@@ -375,7 +371,7 @@ export class Parser extends BaseParser<FrameUnion> {
     if (body.size !== 0) {
       frame.extra = body.take(body.size)
     }
-    return frame;
+    return [frame];
   }
 
   onSettingsFrame (body: OffsetBuffer): Frames {
@@ -416,10 +412,10 @@ export class Parser extends BaseParser<FrameUnion> {
       settings[name] = body.readUInt32BE()
     }
 
-    return  {
+    return [{
       type: 'SETTINGS',
       settings: settings
-    }
+    }]
   }
 
   onPingFrame (body: OffsetBuffer): Frames {
@@ -432,7 +428,7 @@ export class Parser extends BaseParser<FrameUnion> {
     var id = body.readUInt32BE()
     var ack = isServer ? (id % 2 === 0) : (id % 2 === 1)
 
-    return { type: 'PING', opaque: opaque, ack: ack }
+    return [{ type: 'PING', opaque, ack }]
   }
 
   onGoawayFrame (body: OffsetBuffer): Frames {
@@ -440,11 +436,11 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('GOAWAY OOB')
     }
 
-    return {
+    return [{
       type: 'GOAWAY',
       lastId: body.readUInt32BE() & 0x7fffffff,
       code: goawayByCode[body.readUInt32BE()]
-    }
+    }]
   }
 
   onWindowUpdateFrame (body: OffsetBuffer): Frames {
@@ -452,11 +448,11 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('WINDOW_UPDATE OOB')
     }
 
-    return {
+    return [{
       type: 'WINDOW_UPDATE',
       id: body.readUInt32BE() & 0x7fffffff,
       delta: body.readInt32BE()
-    }
+    }]
   }
 
   onXForwardedFrame (body: OffsetBuffer): Frames {
@@ -467,9 +463,9 @@ export class Parser extends BaseParser<FrameUnion> {
     var len = body.readUInt32BE()
     if (!body.has(len)) { throw new Error('X_FORWARDED host length OOB') }
 
-    return {
+    return [{
       type: 'X_FORWARDED_FOR',
-      host: body.take(len).toString()
-    }
+      host: new TextDecoder().decode(body.take(len)),
+    }]
   }
 }

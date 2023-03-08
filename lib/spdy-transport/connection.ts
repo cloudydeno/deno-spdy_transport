@@ -3,17 +3,18 @@
 //   client: require('debug')('spdy:connection:client')
 // }
 import { EventEmitter } from 'node:events';
+export { protocol } from './protocol/index.ts'
 import { bytesAsHex, Timeout } from './utils.ts'
-import { protocol } from "../spdy-transport.ts"
 import { PriorityJson, PriorityTree } from "./priority.ts"
 import { Window } from "./window.ts"
 import { Stream } from "./stream.ts"
+import { protocol } from "./protocol/index.ts";
 import { MAX_PRIORITY_STREAMS, DEFAULT_MAX_CHUNK } from "./protocol/base/constants.ts"
+import { ProtocolError } from "./protocol/base/utils.ts";
 import * as spdyProtocol from "./protocol/spdy/index.ts";
 import { Parser } from "./protocol/spdy/parser.ts";
 import { Framer } from "./protocol/spdy/framer.ts";
 import { CompressionPair } from "./protocol/spdy/zlib-pool.ts";
-import { ProtocolError } from "./protocol/base/utils.ts";
 import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SettingsKey, SpdyHeaders } from './protocol/types.ts';
 import { forEach } from "https://deno.land/x/stream_observables@v1.3/transforms/for-each.ts";
 
@@ -205,12 +206,12 @@ export class Connection extends EventEmitter {
       xForward: null,
 
       // Create parser and hole for framer
-      parser: myProtocol.parser.create({
+      parser: new myProtocol.parser({
         // NOTE: needed to distinguish ping from ping ACK in SPDY
         isServer: options.isServer,
         window: window
       }),
-      framer: myProtocol.framer.create({
+      framer: new myProtocol.framer({
         window: window,
         timeout: timeout
       }),
@@ -622,7 +623,7 @@ export class Connection extends EventEmitter {
     // TODO(indutny): handle max_header_list_size
     if (settings.header_table_size) {
       try {
-        state.pair.compress.updateTableSize(settings.header_table_size)
+        state.pair!.compress.updateTableSize(settings.header_table_size)
       } catch (e) {
         this._goaway({
           lastId: 0,

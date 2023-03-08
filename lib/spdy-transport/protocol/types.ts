@@ -51,7 +51,7 @@ export type HeadersFrame = {
   priority: {parent: number; exclusive: boolean; weight: number},
   fin: boolean,
   writable: boolean,
-  headers: Record<string,string>,
+  headers: SpdyHeaders,
   path?: unknown,
 };
 
@@ -60,7 +60,7 @@ export type PushPromiseFrame = {
   id: number,
   fin: boolean,
   promisedId: number,
-  headers: Record<string,string>,
+  headers: SpdyHeaders,
   path?: unknown,
 };
 

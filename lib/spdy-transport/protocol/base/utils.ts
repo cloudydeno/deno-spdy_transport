@@ -1,4 +1,5 @@
 import { goaway } from "../spdy/constants.ts";
+import { SpdyHeaders } from "../types.ts";
 
 export class ProtocolError extends Error {
   code: keyof typeof goaway;
@@ -34,7 +35,7 @@ export function priorityToWeight (priority: number) {
 }
 
 // Copy-Paste from node
-export function addHeaderLine (field: string, value: string, dest: Record<string,string|string[]>) {
+export function addHeaderLine (field: string, value: string, dest: SpdyHeaders) {
   field = field.toLowerCase()
   if (/^:/.test(field)) {
     dest[field] = value

@@ -23,13 +23,11 @@ export abstract class Parser<Tframe> extends EventEmitter {
     super();
 
     this.transformStream = new TransformStream({
-      // readableObjectMode: true
-      transform: (data, ctlr) => {
-        if (!this.dead) { this.buffer.push(data) }
+      transform: async (data, ctlr) => {
+        if (this.dead) return;
+        this.buffer.push(data);
 
-        return new Promise((ok, fail) => {
-          this._consume(ctlr, err => err ? fail(err) : ok());
-        });
+        await this._consume(ctlr);
       },
     });
 
@@ -60,14 +58,10 @@ export abstract class Parser<Tframe> extends EventEmitter {
   //   this._consume(cb)
   // }
 
-  _consume (ctlr: TransformStreamDefaultController<Tframe>, cb: (err?: Error) => void) {
+  async _consume (ctlr: TransformStreamDefaultController<Tframe>) {
     var self = this
 
-    function next (err?: Error | null, frame?: Tframe | Tframe[] | null) {
-      if (err) {
-        return cb(err)
-      }
-
+    async function next (frame?: Tframe | Tframe[] | null) {
       if (Array.isArray(frame)) {
         for (var i = 0; i < frame.length; i++) {
           ctlr.enqueue(frame[i])
@@ -78,23 +72,21 @@ export abstract class Parser<Tframe> extends EventEmitter {
       }
 
       // Consume more packets
-      if (!sync) {
-        return self._consume(ctlr, cb)
+      if (sync) {
+        await new Promise<void>(ok => queueMicrotask(ok));
       }
-
-      queueMicrotask(function () {
-        self._consume(ctlr, cb)
-      })
+      await self._consume(ctlr);
+      return;
     }
 
     if (this.dead) {
-      return cb()
+      return;
     }
 
     if (this.buffer.size < this.waiting) {
       // No data at all
       if (this.buffer.size === 0) {
-        return cb()
+        return;
       }
 
       // Partial DATA frame or something that we can process partially
@@ -103,12 +95,11 @@ export abstract class Parser<Tframe> extends EventEmitter {
         this.buffer.skip(partial.size)
         this.waiting -= partial.size
 
-        this.executePartial(partial, next)
-        return
+        await this.executePartial(partial).then(next)
       }
 
       // We shall not do anything until we get all expected data
-      return cb()
+      return
     }
 
     var sync = true
@@ -116,8 +107,9 @@ export abstract class Parser<Tframe> extends EventEmitter {
     var content = this.buffer.clone(this.waiting)
     this.buffer.skip(this.waiting)
 
-    this.execute(content, next)
+    const promise = this.execute(content).then(next)
     sync = false
+    await promise;
   }
 
   setVersion (version: number) {
@@ -129,12 +121,6 @@ export abstract class Parser<Tframe> extends EventEmitter {
     this.decompress = new LockStream(pair.decompress)
   }
 
-  abstract execute(buffer: OffsetBuffer, callback: (
-    err?: Error | null,
-    frame?: Tframe | Tframe[] | null,
-  ) => void): void;
-  abstract executePartial(buffer: OffsetBuffer, callback: (
-    err?: Error | null,
-    frame?: Tframe | Tframe[] | null,
-  ) => void): void;
+  abstract execute(buffer: OffsetBuffer): Promise<Tframe | Tframe[] | null>;
+  abstract executePartial(buffer: OffsetBuffer): Promise<Tframe | Tframe[] | null>;
 }

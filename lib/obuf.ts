@@ -1,3 +1,6 @@
+// Original repo: https://github.com/indutny/offset-buffer
+// Ported to Typescript for /x/spdy_transport
+
 export class OffsetBuffer {
   offset: number;
   size: number;

@@ -1,3 +1,6 @@
+// Original repo: https://github.com/indutny/wbuf
+// Ported to Typescript for /x/spdy_transport
+
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 
 export class WriteBuffer {

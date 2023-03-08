@@ -5,6 +5,7 @@ export class ProtocolError extends Error {
   code: keyof typeof goaway;
   constructor(code: keyof typeof goaway, message: string) {
     super(`${code}: ${message}`);
+    console.error(`Building ProtocolError: ${code} ${message}`);
     this.code = code
     // this.message = message
   }

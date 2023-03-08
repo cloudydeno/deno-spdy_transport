@@ -96,6 +96,7 @@ export class Connection extends EventEmitter {
     xForward: null | string;
     parser: Parser;
     framer: Framer;
+    alive: boolean;
   };
   socket: StreamSocket;
 
@@ -216,6 +217,7 @@ export class Connection extends EventEmitter {
         timeout: timeout
       }),
 
+      alive: true,
     };
 
     // It starts with DEFAULT_WINDOW, update must be sent to change it on client
@@ -303,13 +305,14 @@ export class Connection extends EventEmitter {
 
   _handleClose(reason?: string) {
     console.error('_handleClose', {reason})
-    // throw new Error('...sss')
+
     var err: Error & {code?: string} | null = null;
     if (reason) {
       err = new Error('socket hang up: '+reason)
       err.code = 'ECONNRESET'
     }
 
+    this._spdyState.alive = false;
     this.destroyStreams(err)
     this.emit('close')
 
@@ -378,16 +381,14 @@ export class Connection extends EventEmitter {
     this.emit('error', err)
   }
 
-  _handleFrame (frame: FrameUnion) {
+  async _handleFrame (frame: FrameUnion) {
     var state = this._spdyState
 
     // state.debug('id=0 frame', frame)
     state.timeout.reset()
 
     // For testing purposes
-    this.emit('frame', frame)
-
-    var stream
+    // this.emit('frame', frame)
 
     // Session window update
     if (frame.type === 'WINDOW_UPDATE' && frame.id === 0) {
@@ -410,6 +411,8 @@ export class Connection extends EventEmitter {
       return
     }
 
+    var stream: Stream | null = null;
+
     if (!stream && frame.id !== undefined) {
       // Load created one
       stream = state.stream.map[frame.id]
@@ -423,7 +426,7 @@ export class Connection extends EventEmitter {
         if (this._isGoaway(frame.id)) { return }
 
         // state.debug('id=0 stream=%d not found', frame.id)
-        state.framer.rstFrame({ id: frame.id, code: 'INVALID_STREAM' })
+        await state.framer.rstFrame({ id: frame.id, code: 'INVALID_STREAM' })
         return
       }
     }
@@ -435,7 +438,7 @@ export class Connection extends EventEmitter {
     }
 
     if (stream) {
-      stream._handleFrame(frame)
+      await stream._handleFrame(frame)
     } else if (frame.type === 'SETTINGS') {
       this._handleSettings(frame.settings)
     } else if (frame.type === 'ACK_SETTINGS') {
@@ -452,6 +455,7 @@ export class Connection extends EventEmitter {
     } else if (frame.type === 'PRIORITY') {
       // TODO(indutny): handle this
     } else {
+      throw new Error(`TODO: unimpl frame type ${frame.type}`);
       // state.debug('id=0 unknown frame type: %s', frame.type)
     }
   }
@@ -752,9 +756,9 @@ export class Connection extends EventEmitter {
     delete state.stream.map[stream.id]
     state.stream.count--
 
-    if (state.stream.count === 0) {
-      this.emit('_streamDrain')
-    }
+    // if (state.stream.count === 0) {
+    //   this.emit('_streamDrain')
+    // }
   }
 
   async _goaway (params: {
@@ -799,23 +803,23 @@ export class Connection extends EventEmitter {
       return
     }
 
-    self.on('_streamDrain', self._onStreamDrain)
+    // self.on('_streamDrain', self._onStreamDrain)
   }
 
-  _onStreamDrain (error?: Error | null) {
-    var state = this._spdyState
+  // _onStreamDrain (error?: Error | null) {
+  //   var state = this._spdyState
 
     // state.debug('id=0 _onStreamDrain')
 
-    state.framer.dump()
+    // state.framer.dump()
     // state.framer.unpipe(this.socket)
     // state.framer.resume()
 
-    if (this.socket.destroySoon) {
-      this.socket.destroySoon()
-    }
-    this.emit('close', error)
-  }
+    // if (this.socket.destroySoon) {
+    //   this.socket.destroySoon()
+    // }
+    // this.emit('close', error)
+  // }
 
   end (callback?: ClassicCallback) {
     var state = this._spdyState

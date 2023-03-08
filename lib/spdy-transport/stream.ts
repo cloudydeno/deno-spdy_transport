@@ -3,21 +3,20 @@
 //   server: require('debug')('spdy:stream:server')
 // }
 // import { Duplex } from 'npm:readable-stream';
-import { Connection, CreatePushOptions, StreamSocket } from "./connection.ts";
+import { Connection, CreatePushOptions } from "./connection.ts";
 import { Window } from "./window.ts";
 import { Timeout } from './utils.ts'
 import EventEmitter from "node:events";
 import { PriorityJson, PriorityNode } from "./priority.ts";
 import { Framer } from "./protocol/spdy/framer.ts";
 import { Parser } from "./protocol/spdy/parser.ts";
-import { DataFrame, FrameUnion, SpdyHeaders, SpdyHeaderValue } from "./protocol/types.ts";
+import { DataFrame, FrameUnion, SpdyHeaders } from "./protocol/types.ts";
 import { ClassicCallback } from "./protocol/types.ts";
 import { CreateStreamOptions } from "./connection.ts";
 import { constants } from "./protocol/spdy/index.ts";
 import { assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 
 type SpdyStreamState = {
-  socket: null;
   protocol: unknown;
   constants: unknown;
   priority: PriorityNode | null;
@@ -52,13 +51,11 @@ export class Stream extends EventEmitter {
 
   readable: ReadableStream<Uint8Array>;
   writable: WritableStream<Uint8Array>;
-  private ctlr?: ReadableStreamDefaultController<Uint8Array>;
 
-  socket?: StreamSocket;
   aborted?: boolean;
 
   private _writableStateFinished: boolean;
-  private _readableStateEnded: boolean;
+  private _inboundData: WritableStreamDefaultWriter<Uint8Array> | null = null;
 
   constructor (connection: Connection, options: CreateStreamOptions & {
     id: number;
@@ -87,17 +84,10 @@ export class Stream extends EventEmitter {
       },
     })
 
-    this._readableStateEnded = false;
-    this.readable = new ReadableStream({
-      start: (ctlr) => {
-        if (options.readable === false) {
-          ctlr.error(`not readable`);
-        } else {
-          this.ctlr = ctlr;
-        }
-      },
-      // TODO: cancel
-    })
+
+    const inboundDataPipe = new TransformStream<Uint8Array>();
+    this.readable = inboundDataPipe.readable;
+    this._inboundData = inboundDataPipe.writable.getWriter();
 
     var connectionState = connection._spdyState
 
@@ -110,7 +100,6 @@ export class Stream extends EventEmitter {
     this.parent = options.parent || null
 
     var state = this._spdyState = {
-      socket: null,
       protocol: connectionState.protocol,
       constants: connectionState.protocol.constants,
 
@@ -163,10 +152,6 @@ export class Stream extends EventEmitter {
     // }
   }
 
-  _init (socket: StreamSocket) {
-    this.socket = socket
-  }
-
   _initPriority (priority?: PriorityJson | null) {
     var connectionState = this.connection._spdyState
     var root = connectionState.priorityRoot
@@ -183,32 +168,42 @@ export class Stream extends EventEmitter {
     })
   }
 
-  _handleFrame (frame: FrameUnion) {
-    var state = this._spdyState
-
-    // Ignore any kind of data after abort
-    if (state.aborted) {
-      // state.debug('id=%d ignoring frame=%s after abort', this.id, frame.type)
-      return
-    }
-
-    // Restart the timer on incoming frames
+  async _handleFrame(frame: FrameUnion) {
+    const state = this._spdyState;
     state.timeout.reset()
 
-    if (frame.type === 'DATA') {
-      this._handleData(frame)
-    } else if (frame.type === 'HEADERS') {
-      this._handleHeaders(frame)
-    } else if (frame.type === 'RST') {
-      this._handleRST(frame)
-    } else if (frame.type === 'WINDOW_UPDATE') { this._handleWindowUpdate(frame) } else if (frame.type === 'PRIORITY') {
-      this._handlePriority(frame)
-    } else if (frame.type === 'PUSH_PROMISE') { this._handlePushPromise(frame) }
+    switch (frame.type) {
+    case 'DATA':
+      if (!state.readable || !this._inboundData) {
+        // DATA on ended or not readable stream!
+        console.error(`WARN: DATA on ended or not readable stream!`);
+        state.framer.rstFrame({ id: this.id, code: 'STREAM_CLOSED' })
+      } else {
+        state.window.recv.update(-frame.data.length)
+        await this._inboundData.ready;
+        await this._inboundData.write(frame.data);
+      }
+      break;
+    case 'HEADERS':
+      this._handleHeaders(frame);
+      break;
+    case 'RST':
+      this._handleRST(frame);
+      break;
+    case 'WINDOW_UPDATE':
+      this._handleWindowUpdate(frame);
+      break;
+    case 'PRIORITY':
+      this._handlePriority(frame);
+      break;
+    case 'PUSH_PROMISE':
+      this._handlePushPromise(frame);
+      break;
+    }
 
-    if ((frame as DataFrame).fin) {
-      // state.debug('id=%d end', this.id)
-      this.ctlr!.close()
-      this._readableStateEnded = true;
+    if ((frame as DataFrame).fin && this._inboundData) {
+      await this._inboundData.close();
+      this._inboundData = null;
     }
   }
 
@@ -272,6 +267,7 @@ export class Stream extends EventEmitter {
     return await self._split(data, offset + size, onChunk);
   }
 
+  // TODO: is it ok that this is never called?
   _read () {
     var state = this._spdyState
 
@@ -288,23 +284,6 @@ export class Stream extends EventEmitter {
       id: this.id,
       delta: delta
     })
-  }
-
-  _handleData (frame: {
-    data: Uint8Array,
-  }) {
-    var state = this._spdyState
-
-    // DATA on ended or not readable stream!
-    if (!state.readable || this._readableStateEnded) {
-      state.framer.rstFrame({ id: this.id, code: 'STREAM_CLOSED' })
-      return
-    }
-
-    // state.debug('id=%d recv=%d', this.id, frame.data.length)
-    state.window.recv.update(-frame.data.length)
-
-    this.ctlr!.enqueue(frame.data)
   }
 
   _handleRST (frame: {
@@ -352,7 +331,7 @@ export class Stream extends EventEmitter {
   }) {
     var state = this._spdyState
 
-    if (!state.readable || this._readableStateEnded) {
+    if (!state.readable || !this._inboundData) {
       state.framer.rstFrame({ id: this.id, code: 'STREAM_CLOSED' })
       return
     }
@@ -446,7 +425,7 @@ export class Stream extends EventEmitter {
       return
     }
 
-    if ((!state.readable || this._readableStateEnded) &&
+    if ((!state.readable || !this._inboundData) &&
         this._writableStateFinished) {
       // Clear timeout
       state.timeout.set(0)
@@ -640,7 +619,7 @@ export class Stream extends EventEmitter {
   async abort (code?: keyof typeof constants.error) {
     var state = this._spdyState
 
-    if ((!this._spdyState.readable || this._readableStateEnded) && this._writableStateFinished) {
+    if ((!this._spdyState.readable || !this._inboundData) && this._writableStateFinished) {
       // state.debug('id=%d already closed', this.id)
       return
     }
@@ -657,14 +636,18 @@ export class Stream extends EventEmitter {
 
     var abortCode = code || 'CANCEL'
 
-    state.framer.rstFrame({
-      id: this.id,
-      code: abortCode
-    })
+    if (this.connection._spdyState.alive) {
+      state.framer.rstFrame({
+        id: this.id,
+        code: abortCode
+      })
+    }
 
-    await new Promise<void>(ok => queueMicrotask(ok));
+    // await new Promise<void>(ok => queueMicrotask(ok));
 
-    this.emit('close', new Error('Aborted, code: ' + abortCode))
+    this._inboundData?.abort(new Error('Aborted, code: ' + abortCode));
+    this._inboundData = null;
+    // this.emit('close', new Error('Aborted, code: ' + abortCode))
   }
 
   setPriority (info: PriorityJson) {

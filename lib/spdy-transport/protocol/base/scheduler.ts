@@ -4,7 +4,14 @@ import { binaryLookup } from '../../utils.ts';
 import { assertEquals } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { EventEmitter } from 'node:events';
 
-/*
+export type WritableData = {
+  stream: number,
+  priority: false | number,
+  chunks: Uint8Array[],
+  callback?: (err?: Error | null) => void;
+}
+
+/**
  * We create following structure in `pending`:
  * [ [ id = 0 ], [ id = 1 ], [ id = 2 ], [ id = 0 ] ]
  *     chunks      chunks      chunks      chunks
@@ -23,21 +30,13 @@ import { EventEmitter } from 'node:events';
  * This way data is interleaved between the different streams.
  */
 
-export type WritableData = {
-  stream: number,
-  priority: false | number,
-  chunks: Uint8Array[],
-  callback?: (err?: Error | null) => void;
-}
-
 export class Scheduler extends EventEmitter {
   windowSize: number;
   sync: WritableData[];
   list: SchedulerItem[];
   count: number;
-  pendingTick: boolean;
   readable: ReadableStream<Uint8Array>;
-  ctlr!: ReadableStreamDefaultController<Uint8Array>;
+  waitingCb: (() => void) | null = null;
 
   constructor (options?: {
     window?: number;
@@ -46,196 +45,104 @@ export class Scheduler extends EventEmitter {
 
     // Pretty big window by default
     this.windowSize = options?.window ?? 0.25
-    // ... but that isn't a Window instance!??!
-    // this.windowSize = options.window;
 
     this.sync = []
     this.list = []
     this.count = 0
-    this.pendingTick = false
 
-    this.pendingTick = true
     this.readable = new ReadableStream({
-      start: (ctlr) => {
-        this.ctlr = ctlr;
-        this.pendingTick = false;
-        this._read();
-      }
+      pull: async ctlr => {
+
+        while (this.count > 0 && (ctlr.desiredSize ?? 1) > 0) {
+          for (const item of this.sweepQueueOnce()) {
+            ctlr.enqueue(item);
+          }
+          // Assuming we have a desiredSize, stop enqueueing if it's below 1
+          if ((ctlr.desiredSize ?? 0) <= 0) return;
+        }
+
+        // We don't have anything to send so we set up a hook for later
+        await new Promise<void>(ok => {
+          this.waitingCb = ok;
+        });
+      },
+    }, {
+      highWaterMark: 5, // How many frames should be pulled at a time
     })
   }
 
-  // Just for testing, really
-  // static create (options?: {
-  //   window?: number;
-  // }) {
-  //   return new Scheduler(options)
-  // }
-
-  schedule (data: WritableData) {
-    var priority = data.priority
-    var stream = data.stream
-    var chunks = data.chunks
-
-    // Synchronous frames should not be interleaved
+  findQueue(stream: number, priority: number | false) {
     if (priority === false) {
-      // debug('queue sync', chunks)
-      this.sync.push(data)
-      this.count += chunks.length
-
-      this._read()
-      return
+      return this.sync;
     }
 
-    // debug('queue async priority=%d stream=%d', priority, stream, chunks)
-    var item = new SchedulerItem(stream, priority)
+    var item: SchedulerItem = { stream, priority, queue: [] };
     var index = binaryLookup(this.list, item, insertCompare)
 
-    // Push new item
     if (index >= this.list.length || insertCompare(this.list[index], item) !== 0) {
+      // Create new item
       this.list.splice(index, 0, item)
     } else { // Coalesce
       item = this.list[index]
     }
 
-    item.push(data)
-
-    this.count += chunks.length
-
-    this._read()
+    return item.queue;
   }
 
-  _read () {
+  schedule (data: WritableData) {
+    const queue = this.findQueue(data.stream, data.priority);
+
+    queue.push(data);
+    this.count += data.chunks.length;
+
+    if (this.waitingCb) {
+      this.waitingCb();
+      this.waitingCb = null;
+    }
+  }
+
+  *sweepQueueOnce () {
+    // Synchronous frames should not be interleaved
+    const shifted = this.sync.shift();
+    if (shifted) {
+      yield* shifted.chunks;
+      this.count -= shifted.chunks.length;
+      shifted.callback?.();
+      return;
+    }
+
     if (this.count === 0) {
+      // Nothing left to send.
       return
     }
 
-    if (this.pendingTick) {
-      return
-    }
-    this.pendingTick = true
+    var startPriority = this.list[0].priority
+    for (const current of this.list) {
+      if (startPriority - current.priority > this.windowSize) break;
 
-    var self = this
-    // queueMicrotask(function () {
-      self.pendingTick = false
-      self.tick()
-    // })
+      const item = current.queue.shift()!
+      if (item) {
+        yield* item.chunks;
+        this.count -= item.chunks.length;
+        item.callback?.();
+      }
+    }
+
+    // Remove any empty SchedulerItems
+    this.list = this.list.filter(x => x.queue.length > 0);
   }
 
-  tick () {
-    // No luck for async frames
-    if (!this.tickSync()) { return false }
-
-    return this.tickAsync()
-  }
-
-  tickSync () {
-    // Empty sync queue first
-    var sync = this.sync
-    var res = true
-    this.sync = []
-    for (var i = 0; i < sync.length; i++) {
-      var item = sync[i]
-      // debug('tick sync pending=%d', this.count, item.chunks)
-      for (var j = 0; j < item.chunks.length; j++) {
-        this.count--
-        // TODO: handle stream backoff properly
-        try {
-          this.ctlr.enqueue(item.chunks[j])
-        } catch (err) {
-          this.emit('error', err)
-          return false
-        }
-      }
-      // debug('after tick sync pending=%d', this.count)
-
-      // TODO(indutny): figure out the way to invoke callback on actual write
-      if (item.callback) {
-        item.callback(null)
-      }
+  *flushAll () {
+    while (this.count > 0) {
+      yield* this.sweepQueueOnce();
     }
-    return res
-  }
-
-  tickAsync () {
-    var res = true
-    var list = this.list
-    if (list.length === 0) {
-      return res
-    }
-
-    var startPriority = list[0].priority
-    for (var index = 0; list.length > 0; index++) {
-      // Loop index
-      index %= list.length
-      if ((+startPriority) - (+list[index].priority) > this.windowSize) { index = 0 }
-      // debug('tick async index=%d start=%d', index, startPriority)
-
-      var current = list[index]
-      var item = current.shift()!
-
-      if (current.isEmpty()) {
-        list.splice(index, 1)
-        if (index === 0 && list.length > 0) {
-          startPriority = list[0].priority
-        }
-        index--
-      }
-
-      // debug('tick async pending=%d', this.count, item.chunks)
-      for (var i = 0; i < item.chunks.length; i++) {
-        this.count--
-        // TODO: handle stream backoff properly
-        try {
-          this.ctlr.enqueue(item.chunks[i])
-        } catch (err) {
-          this.emit('error', err)
-          return false
-        }
-      }
-      // debug('after tick pending=%d', this.count)
-
-      // TODO(indutny): figure out the way to invoke callback on actual write
-      if (item.callback) {
-        item.callback(null)
-      }
-      if (!res) { break }
-    }
-
-    return res
-  }
-
-  dump () {
-    this.tickSync()
-
-    // Write everything out
-    while (!this.tickAsync()) {
-      // Intentional no-op
-    }
-    assertEquals(this.count, 0)
   }
 }
 
-class SchedulerItem {
+type SchedulerItem = {
   stream: number;
-  priority: false | number;
+  priority: number;
   queue: WritableData[];
-  constructor (stream: number, priority: false | number) {
-    this.stream = stream
-    this.priority = priority
-    this.queue = []
-  }
-
-  push (chunks: WritableData) {
-    this.queue.push(chunks)
-  }
-
-  shift () {
-    return this.queue.shift()
-  }
-
-  isEmpty () {
-    return this.queue.length === 0
-  }
 }
 
 function insertCompare (a: SchedulerItem, b: SchedulerItem) {

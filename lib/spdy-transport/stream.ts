@@ -136,13 +136,8 @@ export class Stream extends EventEmitter {
     this.on('finish', this._onFinish)
     this.on('end', this._onEnd)
 
-    var self = this
-    function _onWindowOverflow () {
-      self._onWindowOverflow()
-    }
-
-    state.window.recv.on('overflow', _onWindowOverflow)
-    state.window.send.on('overflow', _onWindowOverflow)
+    state.window.recv.on('overflow', () => this._onWindowOverflow())
+    state.window.send.on('overflow', () => this._onWindowOverflow())
 
 
     // if (!state.readable) { this.ctlr?.close(null) }
@@ -215,7 +210,6 @@ export class Stream extends EventEmitter {
 
     // Writes should come after pending control frames (response and headers)
     if (state.corked !== 0) {
-      var self = this
       await new Promise<void>(ok => state.corkQueue.push(ok));
     }
 
@@ -645,7 +639,11 @@ export class Stream extends EventEmitter {
 
     // await new Promise<void>(ok => queueMicrotask(ok));
 
-    this._inboundData?.abort(new Error('Aborted, code: ' + abortCode));
+    if (abortCode == 'CANCEL') {
+      this._inboundData?.close();
+    } else {
+      this._inboundData?.abort(new Error('Aborted, code: ' + abortCode));
+    }
     this._inboundData = null;
     // this.emit('close', new Error('Aborted, code: ' + abortCode))
   }

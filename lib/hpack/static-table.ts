@@ -366,7 +366,8 @@ export const table = [
     "totalSize": 48
   }
 ];
-export const map: Record<string, {index: number, values: Record<string,number|undefined>}|undefined> = {
+type StaticTableMap = Record<string, {index: number, values: Record<string,number|undefined>}|undefined>;
+export const map: StaticTableMap = {
   ":authority": {
     "index": 1,
     "values": {

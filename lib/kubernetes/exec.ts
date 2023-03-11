@@ -15,6 +15,7 @@ type ExecOptions = {
 };
 
 type ExecStreams<T extends ExecOptions> = {
+  spdyTunnel: Connection;
   status: Promise<JSONValue | null>;
   stdin: T['stdin'] extends true ? WritableStream<Uint8Array> : null;
   stdout: T['stdout'] extends true ? ReadableStream<Uint8Array> : null;
@@ -95,6 +96,7 @@ export async function execUsing<T extends ExecOptions>(client: KubeConfigSpdyTun
   ]);
 
   return {
+    spdyTunnel: tunnel,
     status: new Response(errorStream.readable).text(),
     resize: resizeStream as any,
     stdin: stdinStream as any,

@@ -19,6 +19,8 @@ import { CompressionPair } from "./protocol/spdy/zlib-pool.ts";
 import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SpdySettingsKey, SpdyHeaders } from './protocol/types.ts';
 import { forEach } from "https://deno.land/x/stream_observables@v1.3/transforms/for-each.ts";
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
+import { merge } from "https://deno.land/x/stream_observables@v1.3/combiners/merge.ts";
+import { map } from "https://deno.land/x/stream_observables@v1.3/transforms/map.ts";
 
 export type StreamSocket = {
   readable: ReadableStream<Uint8Array>;
@@ -235,10 +237,58 @@ export class Connection extends EventEmitter {
     this.socket = socket
 
     this._init()
+    this.runToCompletion()
   }
 
   static create (socket: StreamSocket, options: ConnectionOptions) {
     return new Connection(socket, options)
+  }
+
+  async runToCompletion() {
+    let directions = {inbound: this.socket.readable, outbound: this._spdyState.framer.readable};
+
+    // If the user wants, we tap the socket and write (decrypted) packets to a .pcap file
+    let pcapOutPath = Deno.env.get('DEBUG_WRITE_PCAP_FILE');
+    let teePromise: Promise<unknown> = Promise.resolve([]);
+    if (pcapOutPath) {
+      const tees = {inbound: directions.inbound.tee(), outbound: directions.outbound.tee()};
+      directions = {inbound: tees.inbound[0], outbound: tees.outbound[0]};
+      // TODO: 6121 for SPDY or whatever port wireshark checks for HTTP2, or just frame properly
+      const text2pcap = Deno.run({
+        cmd: ['text2pcap', '-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
+        stdin: 'piped',
+        stdout: 'inherit',
+        stderr: 'inherit',
+      });
+      // const packetFlow =
+        merge(
+          tees.inbound[1].pipeThrough(map(x => ({dir: 'I', date: new Date(), data: x}))),
+          tees.outbound[1].pipeThrough(map(x => ({dir: 'O', date: new Date(), data: x}))),
+        )
+        .pipeThrough(map(x => `${x.dir} ${x.date.toISOString()}\n000000 ${bytesAsHex(x.data)}\n`))
+        // .pipeThrough(forEach(x => console.error(x)))
+        .pipeThrough(new TextEncoderStream())
+        .pipeTo(text2pcap.stdin.writable);//.then(() => console.error('closed'));
+      text2pcap.status();
+      // teePromise = Promise.all([packetFlow, text2pcap.status]);
+    }
+
+    const networkSocket = {
+      readable: directions.inbound,
+      writable: this.socket.writable,
+    };
+    const inboundFrameHandler = new WritableStream({
+      write: this._handleFrame.bind(this),
+      close: this._handleClose.bind(this),
+      abort: this._handleClose.bind(this),
+    });
+
+    // Hook up the streams
+    // TODO: I suppose Framer/Parser could be joined into a TransformStream?
+    await directions.outbound
+      .pipeThrough(networkSocket)
+      .pipeThrough(this._spdyState.parser.transformStream)
+      .pipeTo(inboundFrameHandler);
   }
 
   _init () {
@@ -268,21 +318,6 @@ export class Connection extends EventEmitter {
     state.framer.on('error', function (err) {
       self.emit('error', err)
     })
-
-    // Hook up the streams
-    // TODO: I suppose Framer/Parser could be joined into a TransformStream?
-    const printPackets = Deno.args.includes('--print-packets');
-    this.socket.readable
-      .pipeThrough(forEach(buf => printPackets ? console.log(`I ${new Date().toISOString()}\n000000 ${bytesAsHex(buf)}`) : null))
-      .pipeThrough(state.parser.transformStream)
-      .pipeTo(new WritableStream({
-        write: this._handleFrame.bind(this),
-        close: this._handleClose.bind(this),
-        abort: this._handleClose.bind(this),
-      }));
-    state.framer.readable
-      .pipeThrough(forEach(buf => printPackets ? console.log(`O ${new Date().toISOString()}\n000000 ${bytesAsHex(buf)}`) : null))
-      .pipeTo(this.socket.writable)
 
     // Allow high-level api to catch socket errors
     // this.socket.on('error', function onSocketError (e) {

@@ -1,3 +1,4 @@
+#!/usr/bin/env -S deno run --unstable --allow-net
 import { Connection } from "../spdy-transport/connection.ts";
 
 const url = new URL(Deno.args[0]);

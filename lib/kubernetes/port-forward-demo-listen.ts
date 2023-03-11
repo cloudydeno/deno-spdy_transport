@@ -1,3 +1,5 @@
+#!/usr/bin/env -S deno run --unstable --allow-env --allow-read --allow-net
+
 import { KubeConfig } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/kubeconfig.ts";
 import { PortForwardTunnel } from "./port-forward.ts";
 import { KubeConfigSpdyTunnelClient } from "./tunnel-client.ts";

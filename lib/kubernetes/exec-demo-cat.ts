@@ -1,3 +1,4 @@
+#!/usr/bin/env -S deno run --unstable --allow-env --allow-read --allow-net
 import { KubeConfig } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/kubeconfig.ts";
 import { execUsing } from "./exec.ts";
 import { KubeConfigSpdyTunnelClient } from "./tunnel-client.ts";
@@ -13,16 +14,19 @@ const tunnel = await execUsing(client, {
   namespace: 'dagd',
   podName: 'dagd-app-7d999dfcf5-6bhdg',
   container: 'nginx',
-  command: ['sh', '-euxc', 'echo hii; cat; exit'],
+  command: ['cat'],//, 'echo hii; cat; exit'],
   stdin: true,
   stdout: true,
+  stderr: true,
+  tty: false,
 });
 
-const writer = tunnel.stdin.getWriter();
-await writer.write(new TextEncoder().encode(`echo hello`));
-await writer.close();
-
-for await (const chunk of tunnel.stdout) {
-  console.error(chunk);
-}
+// Hook up streams to the TTY
+await Promise.all([
+  tunnel.stdout.pipeTo(Deno.stdout.writable, { preventClose: true }),
+  tunnel.stderr.pipeTo(Deno.stderr.writable, { preventClose: true }),
+  Deno.stdin.readable.pipeTo(tunnel.stdin),
+]);
 console.error(await tunnel.status);
+
+tunnel.spdyTunnel.end();

@@ -645,7 +645,7 @@ export class Connection extends EventEmitter {
     state.window.recv.update(delta)
   }
 
-  start (version: 2 | 3 | 3.1) {
+  start (version: 2 | 3 | 3.1 | 4) {
     this._spdyState.parser.setVersion(version)
   }
 

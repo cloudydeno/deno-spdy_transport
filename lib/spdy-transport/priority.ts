@@ -1,6 +1,5 @@
-import { assert, assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts';
+import { assert } from 'https://deno.land/std@0.177.0/testing/asserts.ts';
 import { binaryInsert, binarySearch } from './utils.ts'
-// var debug = require('debug')('spdy:priority')
 
 function compareChildren (a: PriorityNode, b: PriorityNode) {
   return a.weight === b.weight ? a.id - b.id : a.weight - b.weight

@@ -3,7 +3,7 @@ import { FRAME_HEADER_SIZE, flags as flagConstants, DEFAULT_WEIGHT, errorByCode,
 import { Parser as BaseParser } from '../base/parser.ts'
 import { addHeaderLine, error, priorityToWeight, ProtocolError, weightToPriority } from "../base/utils.ts"
 import { FrameHeader, FrameUnion, RstFrame, SpdySettingsKey, SpdyHeaders } from '../types.ts';
-import { assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { OffsetBuffer } from "../../../obuf.ts";
 
 type Frames = Array<FrameUnion>;

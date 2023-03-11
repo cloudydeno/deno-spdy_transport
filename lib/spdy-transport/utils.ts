@@ -1,7 +1,7 @@
 import EventEmitter from "node:events";
-import { Buffer } from "node:buffer";
-import { Deflate, Inflate } from "node:zlib";
-import { ClassicCallback } from "./protocol/types.ts";
+import type { Buffer } from "node:buffer";
+import type { Deflate, Inflate } from "node:zlib";
+import type { ClassicCallback } from "./protocol/types.ts";
 
 export class QueueItem {
   prev: null | QueueItem;

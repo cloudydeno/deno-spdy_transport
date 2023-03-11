@@ -1,7 +1,7 @@
 import { Parser as BaseParser } from '../base/parser.ts'
-import { addHeaderLine, priorityToWeight, ProtocolError, weightToPriority } from "../base/utils.ts"
-import { FrameHeader, FrameUnion, RstFrame, SpdySettingsKey, SpdyHeaders, HeadersFrame, PushPromiseFrame } from '../types.ts';
-import { assert, assertEquals } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { addHeaderLine, ProtocolError } from "../base/utils.ts"
+import { FrameHeader, FrameUnion, SpdyHeaders, HeadersFrame, PushPromiseFrame } from '../types.ts';
+import { assert, assertEquals } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { OffsetBuffer } from "../../../obuf.ts";
 import * as constants from "./constants.ts";
 import { Decompressor } from "../../../hpack/decompressor.ts";

@@ -1,8 +1,3 @@
-// var debug = {
-//   client: require('debug')('spdy:stream:client'),
-//   server: require('debug')('spdy:stream:server')
-// }
-// import { Duplex } from 'npm:readable-stream';
 import { Connection, CreatePushOptions } from "./connection.ts";
 import { Window } from "./window.ts";
 import { Timeout } from './utils.ts'
@@ -14,7 +9,7 @@ import { DataFrame, FrameUnion, SpdyHeaders } from "./protocol/types.ts";
 import { ClassicCallback } from "./protocol/types.ts";
 import { CreateStreamOptions } from "./connection.ts";
 import { constants } from "./protocol/spdy/index.ts";
-import { assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
+import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 
 type SpdyStreamState = {
   protocol: unknown;

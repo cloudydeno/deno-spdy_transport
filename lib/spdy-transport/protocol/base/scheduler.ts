@@ -1,7 +1,4 @@
 import { binaryLookup } from '../../utils.ts';
-
-// var debug = require('node:debug')('spdy:scheduler')
-import { assertEquals } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { EventEmitter } from 'node:events';
 
 export type WritableData = {

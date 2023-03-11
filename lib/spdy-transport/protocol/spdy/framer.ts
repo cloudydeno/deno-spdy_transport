@@ -1,17 +1,13 @@
-'use strict'
-
-import { Buffer } from 'node:buffer'
 import { Framer as BaseFramer, FramerOptions } from "../base/framer.ts"
 import * as constants from "./constants.ts"
 import { DEFAULT_HOST, DEFAULT_METHOD } from "../base/constants.ts"
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
 import { weightToPriority } from "../base/utils.ts"
-import { ClassicCallback, SpdySettingsKey, SpdyHeaders, SpdyHeaderValue } from '../types.ts'
+import { SpdySettingsKey, SpdyHeaders, SpdyHeaderValue } from '../types.ts'
 import { WriteBuffer } from "../../../wbuf.ts";
 import { PriorityJson } from "../../priority.ts";
 import { WritableData } from '../base/scheduler.ts'
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts'
-// var debug = require('debug')('spdy:framer')
+import { assertEquals } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
 
 type FrameIds = {
   type: keyof typeof constants.frameType;
@@ -86,9 +82,9 @@ export class Framer extends BaseFramer {
       return lkey !== 'connection' && lkey !== 'keep-alive' &&
             lkey !== 'proxy-connection' && lkey !== 'transfer-encoding'
     }, this).map(function (key) {
-      var klen = Buffer.byteLength(key)
+      var klen = new TextEncoder().encode(key).byteLength
       var value = stringify(loweredHeaders[key])
-      var vlen = Buffer.byteLength(value)
+      var vlen = new TextEncoder().encode(value).byteLength
 
       len += size * 2 + klen + vlen
       return [klen, key, vlen, value] as const
@@ -432,7 +428,7 @@ export class Framer extends BaseFramer {
   prefaceFrame () {
   }
 
-  async settingsFrame (options: Partial<Record<SpdySettingsKey,number>>, callback?: ClassicCallback) {
+  async settingsFrame (options: Partial<Record<SpdySettingsKey,number>>) {
     var self = this
 
     var key = this.version + '/' + JSON.stringify(options)
@@ -441,12 +437,12 @@ export class Framer extends BaseFramer {
     if (settings) {
       // debug('cached settings')
       this._resetTimeout()
-      this.schedule({
+      await new Promise(ok => this.schedule({
         stream: 0,
         priority: false,
         chunks: settings,
-        callback: callback
-      })
+        callback: ok
+      }))
       return
     }
 
@@ -546,7 +542,7 @@ export class Framer extends BaseFramer {
       id: 0,
       flags: 0
     }, function (buf) {
-      buf.writeUInt32BE(Buffer.byteLength(frame.host))
+      buf.writeUInt32BE(new TextEncoder().encode(frame.host).byteLength)
       buf.write(frame.host)
     })
   }

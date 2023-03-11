@@ -1,19 +1,15 @@
-import { Buffer } from 'node:buffer'
 import { Framer as BaseFramer, FramerOptions } from "../base/framer.ts"
 import * as constants from "./constants.ts"
 import { DEFAULT_HOST, DEFAULT_METHOD } from "../base/constants.ts"
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
-import { weightToPriority } from "../base/utils.ts"
-import { ClassicCallback, DataFrame, PingFrame, PriorityFrame, SpdySettingsKey, SpdyHeaders, SpdyHeaderValue, WindowUpdateFrame, XForwardedFrame } from '../types.ts'
+import { DataFrame, PriorityFrame, SpdyHeaders } from '../types.ts'
 import { WriteBuffer } from "../../../wbuf.ts";
 import { PriorityJson } from "../../priority.ts";
 import { WritableData } from '../base/scheduler.ts'
-import { assertEquals } from 'https://deno.land/std@0.170.0/testing/asserts.ts'
+import { assertEquals } from 'https://deno.land/std@0.177.0/testing/asserts.ts'
 import { OffsetBuffer } from "../../../obuf.ts";
 import { HpackHeader } from "../../../hpack/types.ts";
 import { Compressor } from "../../../hpack/compressor.ts";
-import { QueuingMutex } from '../../utils.ts'
-// var debug = require('debug')('spdy:framer')
 
 type FrameIds = {
   type: keyof typeof constants.frameType;
@@ -442,30 +438,30 @@ export class Framer extends BaseFramer {
     })
   }
 
-  prefaceFrame (callback?: ClassicCallback) {
+  async prefaceFrame () {
     // debug('preface')
     this._resetTimeout()
-    this.schedule({
+    await new Promise(ok => this.schedule({
       stream: 0,
       priority: false,
       chunks: [ constants.PREFACE_BUFFER ],
-      callback: callback
-    })
+      callback: ok
+    }))
   }
 
-  async settingsFrame (options: Partial<Record<constants.SettingsKey,number>>, callback?: ClassicCallback) {
+  async settingsFrame (options: Partial<Record<constants.SettingsKey,number>>) {
     var key = JSON.stringify(options)
 
     var settings = Framer.settingsCache[key]
     if (settings) {
       // debug('cached settings')
       this._resetTimeout()
-      this.schedule({
+      await new Promise(ok => this.schedule({
         stream: 0,
         priority: false,
         chunks: settings,
-        callback: callback
-      })
+        callback: ok,
+      }));
       return
     }
 

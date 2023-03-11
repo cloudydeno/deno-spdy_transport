@@ -1,5 +1,3 @@
-// import OffsetBuffer from 'npm:obuf'
-// import { Transform } from 'npm:readable-stream'
 import { Window } from '../../window.ts'
 import { OffsetBuffer } from "../../../obuf.ts";
 import EventEmitter from "node:events";

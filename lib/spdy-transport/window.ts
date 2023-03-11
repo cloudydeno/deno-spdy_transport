@@ -1,9 +1,5 @@
 import { EventEmitter } from 'node:events'
 import { ClassicCallback } from './protocol/types.ts';
-// var debug = {
-//   server: require('debug')('spdy:window:server'),
-//   client: require('debug')('spdy:window:client')
-// }
 
 type WindowSideOptions = {
   size: number;

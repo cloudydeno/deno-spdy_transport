@@ -13,6 +13,3 @@ export { PriorityNode, PriorityTree } from './spdy-transport/priority.ts'
 // Export Connection and Stream
 export { Stream } from './spdy-transport/stream.ts';
 export { Connection, Connection as connection } from './spdy-transport/connection.ts';
-
-// Just for `connection.create()`
-// export const connection = transport.Connection

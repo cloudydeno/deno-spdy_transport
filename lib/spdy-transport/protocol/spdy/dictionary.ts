@@ -1,5 +1,3 @@
-'use strict'
-
 const dictionary2 = new TextEncoder().encode([
   'optionsgetheadpostputdeletetraceacceptaccept-charsetaccept-encodingaccept-',
   'languageauthorizationexpectfromhostif-modified-sinceif-matchif-none-matchi',

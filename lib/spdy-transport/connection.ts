@@ -1,7 +1,3 @@
-// var debug = {
-//   server: require('debug')('spdy:connection:server'),
-//   client: require('debug')('spdy:connection:client')
-// }
 import { EventEmitter } from 'node:events';
 export { protocol } from './protocol/index.ts'
 import { bytesAsHex, Timeout } from './utils.ts'
@@ -13,11 +9,8 @@ import { MAX_PRIORITY_STREAMS, DEFAULT_MAX_CHUNK } from "./protocol/base/constan
 import { ProtocolError } from "./protocol/base/utils.ts";
 import * as spdyProtocol from "./protocol/spdy/index.ts";
 import * as http2Protocol from "./protocol/http2/index.ts";
-import { Parser } from "./protocol/spdy/parser.ts";
-import { Framer } from "./protocol/spdy/framer.ts";
 import { CompressionPair } from "./protocol/spdy/zlib-pool.ts";
-import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SpdySettingsKey, SpdyHeaders } from './protocol/types.ts';
-import { forEach } from "https://deno.land/x/stream_observables@v1.3/transforms/for-each.ts";
+import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SpdyHeaders } from './protocol/types.ts';
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 import { merge } from "https://deno.land/x/stream_observables@v1.3/combiners/merge.ts";
 import { map } from "https://deno.land/x/stream_observables@v1.3/transforms/map.ts";

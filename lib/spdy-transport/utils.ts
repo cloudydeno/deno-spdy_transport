@@ -118,6 +118,70 @@ export class LockStream {
   }
 }
 
+export abstract class QueuingMutex<Tin,Tout> {
+  locked = false
+  queue = new Array<() => void>()
+
+  constructor (
+    // private readonly innerFunc: (param: Tin) => Promise<Tout>
+  ) {}
+
+  abstract transformOne(chunks: Tin): Promise<Tout>;
+
+  async use (param: Tin) {
+
+    // Do not let it interleave
+    await new Promise<void>(ok => {
+      if (this.locked) {
+        this.queue.push(() => {
+          this.locked = true;
+          ok();
+        });
+      } else {
+        this.locked = true;
+        ok();
+      }
+    })
+
+    try {
+      return await this.transformOne(param);
+    } finally {
+      this.locked = false
+      this.queue.shift()?.();
+    }
+  }
+}
+
+export class InflateDeflateQueue extends QueuingMutex<Uint8Array[],Uint8Array[]> {
+  constructor(
+    private readonly stream: Inflate | Deflate,
+  ) {
+    super();
+  }
+
+  async transformOne(chunks: Uint8Array[]): Promise<Uint8Array[]> {
+
+    // Accumulate all output data
+    var output: Uint8Array[] = []
+    function onData (chunk: Buffer) {
+      output.push(chunk)
+    }
+    this.stream.on('data', onData)
+
+    try {
+      for (const chunk of chunks) {
+        await new Promise<void>((ok, fail) => {
+          this.stream.write(chunk, err => err ? fail(err) : ok());
+        });
+      }
+
+      return output;
+    } finally {
+      this.stream.removeListener('data', onData)
+    }
+  }
+}
+
 // Just finds the place in array to insert
 export function binaryLookup<T> (list: T[], item: T, compare: (a: T, b: T) => number) {
   var start = 0

@@ -1,8 +1,8 @@
 import { FRAME_HEADER_SIZE, flags as flagConstants, DEFAULT_WEIGHT, errorByCode, goawayByCode } from './constants.ts';
 
 import { Parser as BaseParser } from '../base/parser.ts'
-import { addHeaderLine, priorityToWeight, ProtocolError, weightToPriority } from "../base/utils.ts"
-import { FrameHeader, FrameUnion, RstFrame, SettingsKey, SpdyHeaders } from '../types.ts';
+import { addHeaderLine, error, priorityToWeight, ProtocolError, weightToPriority } from "../base/utils.ts"
+import { FrameHeader, FrameUnion, RstFrame, SpdySettingsKey, SpdyHeaders } from '../types.ts';
 import { assert } from "https://deno.land/std@0.170.0/testing/asserts.ts";
 import { OffsetBuffer } from "../../../obuf.ts";
 
@@ -26,6 +26,8 @@ export class Parser extends BaseParser<FrameUnion> {
     this.state = 'frame-head'
     this.pendingHeader = null
   }
+
+  error = error
 
   setMaxFrameSize (size: number) {
     // http2-only
@@ -379,9 +381,9 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('SETTINGS OOB')
     }
 
-    var settings: Partial<Record<SettingsKey,number>> = {}
+    var settings: Partial<Record<SpdySettingsKey,number>> = {}
     var number = body.readUInt32BE()
-    var idMap: Record<string,SettingsKey> = {
+    var idMap: Record<string,SpdySettingsKey> = {
       1: 'upload_bandwidth',
       2: 'download_bandwidth',
       3: 'round_trip_time',

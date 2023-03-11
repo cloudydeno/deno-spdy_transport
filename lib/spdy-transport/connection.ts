@@ -12,11 +12,13 @@ import { protocol } from "./protocol/index.ts";
 import { MAX_PRIORITY_STREAMS, DEFAULT_MAX_CHUNK } from "./protocol/base/constants.ts"
 import { ProtocolError } from "./protocol/base/utils.ts";
 import * as spdyProtocol from "./protocol/spdy/index.ts";
+import * as http2Protocol from "./protocol/http2/index.ts";
 import { Parser } from "./protocol/spdy/parser.ts";
 import { Framer } from "./protocol/spdy/framer.ts";
 import { CompressionPair } from "./protocol/spdy/zlib-pool.ts";
-import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SettingsKey, SpdyHeaders } from './protocol/types.ts';
+import { ClassicCallback, FrameUnion, GoawayFrame, HeadersFrame, PingFrame, SpdySettingsKey, SpdyHeaders } from './protocol/types.ts';
 import { forEach } from "https://deno.land/x/stream_observables@v1.3/transforms/for-each.ts";
+import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts";
 
 export type StreamSocket = {
   readable: ReadableStream<Uint8Array>;
@@ -24,7 +26,7 @@ export type StreamSocket = {
 };
 
 type ConnectionOptions = {
-  protocol: 'spdy';
+  protocol: 'spdy' | 'http2';
   isServer: boolean;
   maxStreams?: number;
   autoSpdy31?: boolean;
@@ -37,8 +39,8 @@ type ConnectionOptions = {
 export type CreateStreamOptions = {
   id?: number
   request?: boolean,
-  method: string,
-  path: string,
+  method?: string,
+  path?: string,
   host?: string,
   priority?: PriorityJson;
   // priority: {
@@ -63,9 +65,9 @@ export class Connection extends EventEmitter {
 
   public _spdyState: {
     timeout: Timeout;
-    protocol: typeof spdyProtocol;
+    protocol: typeof spdyProtocol | typeof http2Protocol;
     version: null | 2 | 3 | 3.1;
-    constants: typeof spdyProtocol.constants;
+    constants: typeof spdyProtocol.constants | typeof http2Protocol.constants;
     pair: null | CompressionPair;
     isServer: boolean;
     priorityRoot: PriorityTree;
@@ -74,7 +76,7 @@ export class Connection extends EventEmitter {
     acceptPush: boolean; maxChunk: number;
     window: Window;
     streamWindow: Window;
-    pool: spdyProtocol.compressionPool;
+    pool: spdyProtocol.compressionPool | null;
     counters: {
       push: number;
       stream: number;
@@ -94,8 +96,8 @@ export class Connection extends EventEmitter {
     };
     goaway: false | number;
     xForward: null | string;
-    parser: Parser;
-    framer: Framer;
+    parser: spdyProtocol.parser | http2Protocol.parser;
+    framer: spdyProtocol.framer | http2Protocol.framer;
     alive: boolean;
   };
   socket: StreamSocket;
@@ -178,7 +180,7 @@ export class Connection extends EventEmitter {
       }),
 
       // Various state info
-      pool: myProtocol.compressionPool.create(options.headerCompression ?? false),
+      pool: myProtocol.compressionPool ? new myProtocol.compressionPool(options.headerCompression ?? false) : null,
       counters: {
         push: 0,
         stream: 0
@@ -317,7 +319,7 @@ export class Connection extends EventEmitter {
     this.emit('close')
 
     if (this._spdyState.pair) {
-      this._spdyState.pool.put(this._spdyState.pair)
+      this._spdyState.pool?.put(this._spdyState.pair)
     }
 
     // this._spdyState.framer.resume()
@@ -334,7 +336,7 @@ export class Connection extends EventEmitter {
     // state.debug('id=0 version=%d', version)
 
     // Ignore transition to 3.1
-    if (!prev) {
+    if (!prev && pool) {
       state.pair = pool.get(version)
       parser.setCompression(state.pair)
       framer.setCompression(state.pair)
@@ -551,6 +553,7 @@ export class Connection extends EventEmitter {
       return
     }
 
+    assert(frame.headers);
     var stream = this._createStream({
       id: frame.id,
       request: false,
@@ -627,7 +630,8 @@ export class Connection extends EventEmitter {
     // TODO(indutny): handle max_header_list_size
     if (settings.header_table_size) {
       try {
-        state.pair!.compress.updateTableSize(settings.header_table_size)
+        const h2framer = state.framer as http2Protocol.framer;
+        h2framer.hpackCompressor?.updateTableSize(settings.header_table_size)
       } catch (e) {
         this._goaway({
           lastId: 0,
@@ -763,7 +767,7 @@ export class Connection extends EventEmitter {
 
   async _goaway (params: {
     lastId: number;
-    code: keyof typeof spdyProtocol.constants.goaway;
+    code: keyof typeof spdyProtocol.constants.goaway | keyof typeof http2Protocol.constants.goaway;
     send?: boolean;
     extra?: string;
   }) {
@@ -806,7 +810,7 @@ export class Connection extends EventEmitter {
     // self.on('_streamDrain', self._onStreamDrain)
   }
 
-  // _onStreamDrain (error?: Error | null) {
+  _onStreamDrain (error?: Error | null) {
   //   var state = this._spdyState
 
     // state.debug('id=0 _onStreamDrain')
@@ -818,20 +822,22 @@ export class Connection extends EventEmitter {
     // if (this.socket.destroySoon) {
     //   this.socket.destroySoon()
     // }
-    // this.emit('close', error)
-  // }
+    this.emit('close', error)
+  }
 
-  end (callback?: ClassicCallback) {
+  async end (callback?: ClassicCallback) {
     var state = this._spdyState
 
     if (callback) {
       this.once('close', callback)
     }
-    this._goaway({
+    await this._goaway({
       lastId: state.stream.lastId.both,
       code: 'OK',
       send: true
     })
+
+    this._spdyState.framer.closeStream?.();
   }
 
   destroyStreams (err?: Error | null) {

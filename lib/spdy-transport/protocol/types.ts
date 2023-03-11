@@ -1,4 +1,6 @@
-import { error, goaway } from "./spdy/constants.ts";
+import { error as SpdyError, goaway as SpdyGoaway, settingsIndex } from "./spdy/constants.ts";
+import { error as H2Error, goaway as H2Goaway } from "./http2/constants.ts";
+import { PriorityJson } from "../priority.ts";
 
 export type SpdyHeaderValue = string | string[] | number;
 export type SpdyHeaders = Record<string, SpdyHeaderValue | undefined>;
@@ -43,15 +45,16 @@ export type DataFrame = {
   id: number,
   fin: boolean,
   data: Uint8Array,
+  priority?: number | false, // h2 only
 };
 
 export type HeadersFrame = {
   type: 'HEADERS',
   id: number,
-  priority: {parent: number; exclusive: boolean; weight: number},
+  priority: PriorityJson,
   fin: boolean,
   writable: boolean,
-  headers: SpdyHeaders,
+  headers: null | SpdyHeaders,
   path?: unknown,
 };
 
@@ -60,32 +63,23 @@ export type PushPromiseFrame = {
   id: number,
   fin: boolean,
   promisedId: number,
-  headers: SpdyHeaders,
+  headers: null | SpdyHeaders,
   path?: unknown,
 };
 
 export type RstFrame = {
   type: 'RST',
   id: number;
-  code: keyof typeof error
+  code: keyof typeof SpdyError | keyof typeof H2Error
   extra?: Uint8Array;
 }
 
-export type SettingsKey =
-  | 'upload_bandwidth'
-  | 'download_bandwidth'
-  | 'round_trip_time'
-  | 'max_concurrent_streams'
-  | 'current_cwnd'
-  | 'download_retrans_rate'
-  | 'initial_window_size'
-  | 'client_certificate_vector_size'
-;
+export type SpdySettingsKey = (typeof settingsIndex)[number] & string;
 
 export type SettingsFrame = {
   type: 'SETTINGS',
   id?: undefined,
-  settings: Partial<Record<SettingsKey, number>>;
+  settings: Partial<Record<SpdySettingsKey, number>>;
 };
 
 export type PingFrame = {
@@ -99,7 +93,8 @@ export type GoawayFrame = {
   type: 'GOAWAY',
   id?: undefined,
   lastId: number,
-  code: keyof typeof goaway,
+  code: keyof typeof SpdyGoaway | keyof typeof H2Goaway,
+  debug?: Uint8Array;
 }
 
 export type WindowUpdateFrame = {
@@ -125,10 +120,10 @@ export type PriorityFrame = {
   },
 }
 
-/** HTTP2-specific */
+/** HTTP2-specific. Really just an empty SETTINGS with an ACK flag. */
 export type AckSettingsFrame = {
   type: 'ACK_SETTINGS';
-  id: undefined;
+  id?: undefined;
 }
 
 /** Fake frame to simulate end of the data */

@@ -75,6 +75,7 @@ export const settingsIndex = [
   'initial_window_size',
   'client_certificate_vector_size'
 ] as const
+export type SettingsKey = (typeof settingsIndex)[number] & string;
 
 export const DEFAULT_WINDOW = 64 * 1024
 export const MAX_INITIAL_WINDOW_SIZE = 2147483647

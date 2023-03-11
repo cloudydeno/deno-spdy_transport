@@ -37,6 +37,7 @@ export class Scheduler extends EventEmitter {
   count: number;
   readable: ReadableStream<Uint8Array>;
   waitingCb: (() => void) | null = null;
+  closeStream: (() => void) | null = null;
 
   constructor (options?: {
     window?: number;
@@ -51,6 +52,9 @@ export class Scheduler extends EventEmitter {
     this.count = 0
 
     this.readable = new ReadableStream({
+      start: ctlr => {
+        this.closeStream = () => ctlr.close();
+      },
       pull: async ctlr => {
 
         while (this.count > 0 && (ctlr.desiredSize ?? 1) > 0) {

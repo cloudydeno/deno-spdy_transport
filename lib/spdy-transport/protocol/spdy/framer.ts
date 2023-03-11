@@ -6,7 +6,7 @@ import * as constants from "./constants.ts"
 import { DEFAULT_HOST, DEFAULT_METHOD } from "../base/constants.ts"
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
 import { weightToPriority } from "../base/utils.ts"
-import { ClassicCallback, SettingsKey, SpdyHeaders, SpdyHeaderValue } from '../types.ts'
+import { ClassicCallback, SpdySettingsKey, SpdyHeaders, SpdyHeaderValue } from '../types.ts'
 import { WriteBuffer } from "../../../wbuf.ts";
 import { PriorityJson } from "../../priority.ts";
 import { WritableData } from '../base/scheduler.ts'
@@ -432,7 +432,7 @@ export class Framer extends BaseFramer {
   prefaceFrame () {
   }
 
-  async settingsFrame (options: Record<SettingsKey,number>, callback?: ClassicCallback) {
+  async settingsFrame (options: Partial<Record<SpdySettingsKey,number>>, callback?: ClassicCallback) {
     var self = this
 
     var key = this.version + '/' + JSON.stringify(options)
@@ -455,13 +455,14 @@ export class Framer extends BaseFramer {
       var name = constants.settingsIndex[i]
       if (!name) { continue }
 
-      // value: Infinity
-      if (!isFinite(options[name])) {
-        continue
-      }
+      const value = options[name];
+      if (value !== undefined) {
+        // value: Infinity
+        if (!isFinite(value)) {
+          continue
+        }
 
-      if (options[name] !== undefined) {
-        params.push({ key: i, value: options[name] })
+        params.push({ key: i, value: value })
       }
     }
 

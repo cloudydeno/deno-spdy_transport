@@ -1,6 +1,5 @@
 // import OffsetBuffer from 'npm:obuf'
 // import { Transform } from 'npm:readable-stream'
-import { error } from './utils.ts'
 import { Window } from '../../window.ts'
 import { OffsetBuffer } from "../../../obuf.ts";
 import EventEmitter from "node:events";
@@ -63,8 +62,6 @@ export abstract class Parser<Tframe> extends EventEmitter {
     this.decompress = null
     this.dead = false
   }
-
-  error = error
 
   kill () {
     this.dead = true

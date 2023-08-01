@@ -35,8 +35,8 @@ type SpdyStreamState = {
 
 export class Stream extends EventEmitter {
   id: number;
-  method: string;
-  path: string;
+  method?: string;
+  path?: string;
   host?: string;
   headers: SpdyHeaders;
   connection: Connection;
@@ -84,7 +84,7 @@ export class Stream extends EventEmitter {
     this.readable = inboundDataPipe.readable;
     this._inboundData = inboundDataPipe.writable.getWriter();
 
-    var connectionState = connection._spdyState
+    const connectionState = connection._spdyState
 
     this.id = options.id
     this.method = options.method
@@ -94,7 +94,7 @@ export class Stream extends EventEmitter {
     this.connection = connection
     this.parent = options.parent || null
 
-    var state = this._spdyState = {
+    const state = this._spdyState = {
       protocol: connectionState.protocol,
       constants: connectionState.protocol.constants,
 
@@ -143,8 +143,8 @@ export class Stream extends EventEmitter {
   }
 
   _initPriority (priority?: PriorityJson | null) {
-    var connectionState = this.connection._spdyState
-    var root = connectionState.priorityRoot
+    const connectionState = this.connection._spdyState
+    const root = connectionState.priorityRoot
 
     if (!priority) {
       return root.addDefault(this.id)
@@ -198,7 +198,7 @@ export class Stream extends EventEmitter {
   }
 
   async _write (data: Uint8Array) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Send the request if it wasn't sent
     if (!state.sent) { this.send() }
@@ -221,23 +221,21 @@ export class Stream extends EventEmitter {
       return
     }
 
-    var state = this._spdyState
-    var local = state.window.send
-    var session = state.sessionWindow.send
+    const state = this._spdyState
+    const local = state.window.send
+    const session = state.sessionWindow.send
 
-    var availSession = Math.max(0, session.getCurrent())
+    let availSession = Math.max(0, session.getCurrent())
     if (availSession === 0) {
       availSession = session.getMax()
     }
-    var availLocal = Math.max(0, local.getCurrent())
+    let availLocal = Math.max(0, local.getCurrent())
     if (availLocal === 0) {
       availLocal = local.getMax()
     }
 
-    var avail = Math.min(availSession, availLocal)
+    let avail = Math.min(availSession, availLocal)
     avail = Math.min(avail, state.maxChunk)
-
-    var self = this
 
     if (avail === 0) {
       await new Promise(ok => state.window.send.update(0, ok));
@@ -245,26 +243,26 @@ export class Stream extends EventEmitter {
     }
 
     // Split data in chunks in a following way:
-    var limit = avail
-    var size = Math.min(data.length - offset, limit)
+    const limit = avail
+    const size = Math.min(data.length - offset, limit)
 
-    var chunk = data.slice(offset, offset + size)
+    const chunk = data.slice(offset, offset + size)
 
     await onChunk(this, state, chunk);
 
     // Get the next chunk
-    return await self._split(data, offset + size, onChunk);
+    return await this._split(data, offset + size, onChunk);
   }
 
   // TODO: is it ok that this is never called?
   _read () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     if (!state.window.recv.isDraining()) {
       return
     }
 
-    var delta = state.window.recv.getDelta()
+    const delta = state.window.recv.getDelta()
 
     // state.debug('id=%d window emptying, update by %d', this.id, delta)
 
@@ -287,13 +285,13 @@ export class Stream extends EventEmitter {
   _handleWindowUpdate (frame: {
     delta: number;
   }) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.window.send.update(frame.delta)
   }
 
   _onWindowOverflow () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // state.debug('id=%d window overflow', this.id)
     state.framer.rstFrame({ id: this.id, code: 'FLOW_CONTROL_ERROR' })
@@ -305,7 +303,7 @@ export class Stream extends EventEmitter {
   _handlePriority (frame: {
     priority: PriorityJson;
   }) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.priority!.remove()
     state.priority = null
@@ -318,7 +316,7 @@ export class Stream extends EventEmitter {
   _handleHeaders (frame: {
     headers: SpdyHeaders;
   }) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     if (!state.readable || !this._inboundData) {
       state.framer.rstFrame({ id: this.id, code: 'STREAM_CLOSED' })
@@ -335,7 +333,7 @@ export class Stream extends EventEmitter {
   _handleResponse (frame: {
     headers: SpdyHeaders;
   }) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // TODO: why? for kubernetes?
     frame.headers[':status'] ??= 0
@@ -350,7 +348,7 @@ export class Stream extends EventEmitter {
   }
 
   _onFinish () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Send the request if it wasn't sent
     if (!state.sent) {
@@ -360,9 +358,8 @@ export class Stream extends EventEmitter {
       // Just an `.end()` without any writes will trigger immediate `finish` event
       // without any calls to `_write()`.
       if (state.corked !== 0) {
-        var self = this
-        state.corkQueue.push(function () {
-          self._onFinish()
+        state.corkQueue.push(() => {
+          this._onFinish()
         })
         return
       }
@@ -383,9 +380,9 @@ export class Stream extends EventEmitter {
   }
 
   _checkEnded () {
-    var state = this._spdyState
+    const state = this._spdyState
 
-    var ended = false
+    let ended = false
     if (state.aborted) { ended = true }
 
     if (!state.writable || this._writableStateFinished) { ended = true }
@@ -407,7 +404,7 @@ export class Stream extends EventEmitter {
   }
 
   _maybeClose () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // .abort() emits `close`
     if (state.aborted) {
@@ -428,7 +425,7 @@ export class Stream extends EventEmitter {
     headers: SpdyHeaders,
     priority?: PriorityJson;
   }) {
-    var push = this.connection._createStream({
+    const push = this.connection._createStream({
       id: frame.promisedId,
       parent: this,
       push: true,
@@ -452,14 +449,14 @@ export class Stream extends EventEmitter {
   }
 
   _hardCork () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // this.cork()
     state.corked++
   }
 
   _hardUncork () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // this.uncork()
     state.corked--
@@ -468,16 +465,15 @@ export class Stream extends EventEmitter {
     }
 
     // Invoke callbacks
-    var queue = state.corkQueue
+    const queue = state.corkQueue
     state.corkQueue = []
-    for (var i = 0; i < queue.length; i++) {
+    for (let i = 0; i < queue.length; i++) {
       queue[i]()
     }
   }
 
   async _sendPush (status: number, response: SpdyHeaders) {
-    var self = this
-    var state = this._spdyState
+    const state = this._spdyState
 
     this._hardCork()
     await state.framer.pushFrame({
@@ -491,18 +487,18 @@ export class Stream extends EventEmitter {
       headers: this.headers,
       response: response
     })
-    self._hardUncork()
+    this._hardUncork()
   }
 
   _wasSent () {
-    var state = this._spdyState
+    const state = this._spdyState
     return state.sent
   }
 
   // Public API
 
   async send () {
-    var state = this._spdyState
+    const state = this._spdyState
 
     if (state.sent) {
       throw new Error('Stream was already sent')
@@ -512,7 +508,6 @@ export class Stream extends EventEmitter {
     state.timeout.reset()
 
     // TODO(indunty): ideally it should just take a stream object as an input
-    var self = this
     this._hardCork()
     await state.framer.requestFrame({
       id: this.id,
@@ -523,7 +518,7 @@ export class Stream extends EventEmitter {
       headers: this.headers,
       fin: this._writableStateFinished,
     });
-    self._hardUncork()
+    this._hardUncork()
 
     // GET requests should always be auto-finished
     if (!state.writable) {// this.method === 'GET') {
@@ -539,27 +534,26 @@ export class Stream extends EventEmitter {
     }
   }
 
-  async respond (status: keyof typeof constants.statusReason, headers: SpdyHeaders, callback: ClassicCallback) {
-    var self = this
-    var state = this._spdyState
+  async respond (status: keyof typeof constants.statusReason, headers: SpdyHeaders) {
+    const state = this._spdyState
     assert(!state.request, 'Can\'t respond on request')
 
     state.timeout.reset()
 
     this._checkEnded();
 
-    var frame = {
+    const frame = {
       id: this.id,
       status: status,
       headers: headers
     }
     this._hardCork()
     await state.framer.responseFrame(frame);
-    self._hardUncork()
+    this._hardUncork()
   }
 
   setWindow (size: number) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.timeout.reset()
 
@@ -568,7 +562,7 @@ export class Stream extends EventEmitter {
     // state.debug('id=%d force window max=%d', this.id, size)
     state.window.recv.setMax(size)
 
-    var delta = state.window.recv.getDelta()
+    const delta = state.window.recv.getDelta()
     if (delta === 0) { return }
 
     state.framer.windowUpdateFrame({
@@ -579,8 +573,7 @@ export class Stream extends EventEmitter {
   }
 
   async sendHeaders (headers: SpdyHeaders) {
-    var self = this
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.timeout.reset()
 
@@ -598,7 +591,7 @@ export class Stream extends EventEmitter {
       id: this.id,
       headers: headers
     });
-    self._hardUncork()
+    this._hardUncork()
   }
 
   destroy () {
@@ -606,7 +599,7 @@ export class Stream extends EventEmitter {
   }
 
   async abort (code?: keyof typeof constants.error) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     if ((!this._spdyState.readable || !this._inboundData) && this._writableStateFinished) {
       // state.debug('id=%d already closed', this.id)
@@ -623,7 +616,7 @@ export class Stream extends EventEmitter {
 
     this.setTimeout(0)
 
-    var abortCode = code || 'CANCEL'
+    const abortCode = code || 'CANCEL'
 
     if (this.connection._spdyState.alive) {
       state.framer.rstFrame({
@@ -641,10 +634,12 @@ export class Stream extends EventEmitter {
     }
     this._inboundData = null;
     // this.emit('close', new Error('Aborted, code: ' + abortCode))
+
+    await null
   }
 
   setPriority (info: PriorityJson) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.timeout.reset()
 
@@ -652,7 +647,7 @@ export class Stream extends EventEmitter {
 
     // state.debug('id=%d priority change', this.id, info)
 
-    var frame = { id: this.id, priority: info }
+    const frame = { id: this.id, priority: info }
 
     // Change priority on this side
     this._handlePriority(frame)
@@ -661,35 +656,34 @@ export class Stream extends EventEmitter {
     state.framer.priorityFrame(frame)
   }
 
-  async pushPromise (uri: CreatePushOptions, callback: ClassicCallback<Stream>) {
+  async pushPromise (uri: CreatePushOptions) {
     this._checkEnded();
 
-    var self = this
     this._hardCork()
 
     try {
-      var push = await this.connection.pushPromise(this, uri);
+      const push = await this.connection.pushPromise(this, uri);
       push._hardCork()
-    } finally {
-      self._hardUncork()
-    }
 
-    return push
+      return push
+    } finally {
+      this._hardUncork()
+    }
   }
 
   setMaxChunk (size: number) {
-    var state = this._spdyState
+    const state = this._spdyState
     state.maxChunk = size
   }
 
   setTimeout (delay: number, callback?: ClassicCallback) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.timeout.set(delay, callback)
   }
 }
 
-function checkAborted (stream: Stream, state: SpdyStreamState) {
+function checkAborted (_stream: Stream, state: SpdyStreamState) {
   if (state.aborted) {
     // state.debug('id=%d abort write', stream.id)
     throw new Error('Stream write aborted');

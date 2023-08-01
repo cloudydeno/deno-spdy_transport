@@ -14,15 +14,15 @@ export class OffsetBuffer {
 
   isEmpty() {
     return this.size === 0;
-  };
+  }
 
   clone(size: number) {
-    var r = new OffsetBuffer();
+    const r = new OffsetBuffer();
     r.offset = this.offset;
     r.size = size;
     r.buffers = this.buffers.slice();
     return r;
-  };
+  }
 
   toChunks() {
     if (this.size === 0)
@@ -34,10 +34,11 @@ export class OffsetBuffer {
       this.offset = 0;
     }
 
-    var chunks = [ ];
-    var off = 0;
-    for (var i = 0; off <= this.size && i < this.buffers.length; i++) {
-      var buf = this.buffers[i];
+    const chunks = [ ];
+    let off = 0;
+    let i: number;
+    for (i = 0; off <= this.size && i < this.buffers.length; i++) {
+      let buf = this.buffers[i];
       off += buf.length;
 
       // Slice off last buffer
@@ -54,7 +55,7 @@ export class OffsetBuffer {
       this.buffers.length = i;
 
     return chunks;
-  };
+  }
 
   // toString(enc) {
   //   return this.toChunks().map(function(c) {
@@ -66,7 +67,7 @@ export class OffsetBuffer {
     this.buffers = [ buf ];
     this.offset = off;
     this.size = n;
-  };
+  }
 
   push(data: Uint8Array) {
     // Ignore empty writes
@@ -75,11 +76,11 @@ export class OffsetBuffer {
 
     this.size += data.length;
     this.buffers.push(data);
-  };
+  }
 
   has(n: number) {
     return this.size >= n;
-  };
+  }
 
   skip(n: number) {
     if (this.size === 0)
@@ -93,11 +94,12 @@ export class OffsetBuffer {
       return;
     }
 
-    var left = n - (this.buffers[0].length - this.offset);
+    let left = n - (this.buffers[0].length - this.offset);
     this.offset = 0;
 
-    for (var shift = 1; left > 0 && shift < this.buffers.length; shift++) {
-      var buf = this.buffers[shift];
+    let shift: number;
+    for (shift = 1; left > 0 && shift < this.buffers.length; shift++) {
+      const buf = this.buffers[shift];
       if (buf.length > left) {
         this.offset = left;
         break;
@@ -105,7 +107,7 @@ export class OffsetBuffer {
       left -= buf.length;
     }
     this.buffers = this.buffers.slice(shift);
-  };
+  }
 
   copy(target: Uint8Array, targetOff: number, off: number, n: number) {
     if (this.size === 0)
@@ -113,17 +115,17 @@ export class OffsetBuffer {
     if (off !== 0)
       throw new Error('Unsupported offset in .copy()');
 
-    var toff = targetOff;
-    var first = this.buffers[0];
-    var toCopy = Math.min(n, first.length - this.offset);
+    let toff = targetOff;
+    const first = this.buffers[0];
+    const toCopy = Math.min(n, first.length - this.offset);
     target.set(first.slice(this.offset, this.offset+toCopy), toff);
     // first.copy(target, toff, this.offset, this.offset + toCopy);
 
     toff += toCopy;
-    var left = n - toCopy;
-    for (var i = 1; left > 0 && i < this.buffers.length; i++) {
-      var buf = this.buffers[i];
-      var toCopy = Math.min(left, buf.length);
+    let left = n - toCopy;
+    for (let i = 1; left > 0 && i < this.buffers.length; i++) {
+      const buf = this.buffers[i];
+      const toCopy = Math.min(left, buf.length);
 
       target.set(buf.slice(0, toCopy), toff);
       // buf.copy(target, toff, 0, toCopy);
@@ -131,7 +133,7 @@ export class OffsetBuffer {
       toff += toCopy;
       left -= toCopy;
     }
-  };
+  }
 
   take(n: number) {
     if (n === 0)
@@ -140,7 +142,7 @@ export class OffsetBuffer {
     this.size -= n;
 
     // Fast cases
-    var first = this.buffers[0].length - this.offset;
+    const first = this.buffers[0].length - this.offset;
     if (first === n) {
       let r = this.buffers.shift()!;
       if (this.offset !== 0) {
@@ -149,18 +151,19 @@ export class OffsetBuffer {
       }
       return r;
     } else if (first > n) {
-      let r = this.buffers[0].slice(this.offset, this.offset + n);
+      const r = this.buffers[0].slice(this.offset, this.offset + n);
       this.offset += n;
       return r;
     }
 
     // Allocate and fill buffer
-    var out = new Uint8Array(n);
-    var toOff = 0;
-    var startOff = this.offset;
-    for (var i = 0; toOff !== n && i < this.buffers.length; i++) {
-      var buf = this.buffers[i];
-      var toCopy = Math.min(buf.length - startOff, n - toOff);
+    const out = new Uint8Array(n);
+    let toOff = 0;
+    let startOff = this.offset;
+    let i: number;
+    for (i = 0; toOff !== n && i < this.buffers.length; i++) {
+      const buf = this.buffers[i];
+      const toCopy = Math.min(buf.length - startOff, n - toOff);
 
       out.set(buf.slice(startOff, startOff+toCopy), toOff);
       // buf.copy(out, toOff, startOff, startOff + toCopy);
@@ -178,30 +181,30 @@ export class OffsetBuffer {
       this.offset = 0;
 
     return out;
-  };
+  }
 
   peekUInt8() {
     return this.buffers[0][this.offset];
-  };
+  }
 
   readUInt8() {
     this.size -= 1;
-    var first = this.buffers[0];
-    var r = first[this.offset];
+    const first = this.buffers[0];
+    const r = first[this.offset];
     if (++this.offset === first.length) {
       this.offset = 0;
       this.buffers.shift();
     }
 
     return r;
-  };
+  }
 
   readUInt16LE() {
-    var first = this.buffers[0];
+    const first = this.buffers[0];
     this.size -= 2;
 
-    var r;
-    var shift;
+    let r: number;
+    let shift: number;
 
     // Fast case - first buffer has all bytes
     if (first.length - this.offset >= 2) {
@@ -224,14 +227,14 @@ export class OffsetBuffer {
       this.buffers = this.buffers.slice(shift);
 
     return r;
-  };
+  }
 
   readUInt24LE() {
-    var first = this.buffers[0];
+    const first = this.buffers[0];
 
-    var r: number;
-    var shift: number;
-    var firstHas = first.length - this.offset;
+    let r: number;
+    let shift: number;
+    const firstHas = first.length - this.offset;
 
     // Fast case - first buffer has all bytes
     if (firstHas >= 3) {
@@ -265,14 +268,14 @@ export class OffsetBuffer {
       this.buffers = this.buffers.slice(shift);
 
     return r;
-  };
+  }
 
   readUInt32LE() {
-    var first = this.buffers[0];
+    const first = this.buffers[0];
 
-    var r: number;
-    var shift: number;
-    var firstHas = first.length - this.offset;
+    let r: number;
+    let shift: number;
+    const firstHas = first.length - this.offset;
 
     // Fast case - first buffer has all bytes
     if (firstHas >= 4) {
@@ -321,19 +324,19 @@ export class OffsetBuffer {
   }
 
   readUInt16BE() {
-    var r = this.readUInt16LE();
+    const r = this.readUInt16LE();
 
     return ((r & 0xff) << 8) | (r >> 8);
   }
 
   readUInt24BE() {
-    var r = this.readUInt24LE();
+    const r = this.readUInt24LE();
 
     return ((r & 0xff) << 16) | (((r >> 8) & 0xff) << 8) | (r >> 16);
   }
 
   readUInt32BE() {
-    var r = this.readUInt32LE();
+    const r = this.readUInt32LE();
 
     return (((r & 0xff) << 24) |
             (((r >>> 8) & 0xff) << 16) |

@@ -46,7 +46,7 @@ export class Side extends EventEmitter {
   }
 
   updateMax (max: number) {
-    var delta = max - this.max
+    const delta = max - this.max
     // this.window.debug('id=%d side=%s updateMax=%d delta=%d',
     //   this.window.id,
     //   this.name,
@@ -140,7 +140,7 @@ export class Side extends EventEmitter {
     this._refilling = true
 
     while (this._refillQueue.length > 0) {
-      var item = this._refillQueue[0]
+      const item = this._refillQueue[0]
 
       if (this.isEmpty()) {
         break

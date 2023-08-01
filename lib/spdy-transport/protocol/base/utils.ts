@@ -16,7 +16,7 @@ export function error (code: keyof typeof goaway, message: string) {
 }
 
 export function reverse<T extends string> (object: Record<T,number>) {
-  var result = new Array<T>()
+  const result = new Array<T>()
 
   for (const key in object) {
     result[object[key] | 0] = key

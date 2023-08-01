@@ -2,7 +2,7 @@ import { Framer as BaseFramer, FramerOptions } from "../base/framer.ts"
 import * as constants from "./constants.ts"
 import { DEFAULT_HOST, DEFAULT_METHOD } from "../base/constants.ts"
 import { assert } from "https://deno.land/std@0.177.0/testing/asserts.ts"
-import { DataFrame, PriorityFrame, SpdyHeaders } from '../types.ts'
+import { PriorityFrame, SpdyHeaders } from '../types.ts'
 import { WriteBuffer } from "../../../wbuf.ts";
 import { PriorityJson } from "../../priority.ts";
 import { WritableData } from '../base/scheduler.ts'
@@ -53,20 +53,20 @@ export class Framer extends BaseFramer {
   async _frame (frame: FrameIds, body: (buf: WriteBuffer) => void) {
     // debug('id=%d type=%s', frame.id, frame.type)
 
-    var buffer = new WriteBuffer()
+    const buffer = new WriteBuffer()
 
     buffer.reserve(constants.FRAME_HEADER_SIZE)
-    var len = buffer.skip(3)
+    const len = buffer.skip(3)
     buffer.writeUInt8(constants.frameType[frame.type])
     buffer.writeUInt8(frame.flags)
     buffer.writeUInt32BE(frame.id & 0x7fffffff)
 
     body(buffer)
 
-    var frameSize = buffer.size - constants.FRAME_HEADER_SIZE
+    const frameSize = buffer.size - constants.FRAME_HEADER_SIZE
     len.writeUInt24BE(frameSize)
 
-    var chunks = buffer.render()
+    const chunks = buffer.render()
     assertEquals(typeof frame.id, "number");
 
     if (this.window && frame.type === 'DATA') {
@@ -75,7 +75,7 @@ export class Framer extends BaseFramer {
     }
 
     await new Promise(ok => {
-      var toWrite: WritableData = {
+      const toWrite: WritableData = {
         stream: frame.id,
         priority: frame.priority ?? false,
         chunks: chunks,
@@ -93,22 +93,22 @@ export class Framer extends BaseFramer {
     chunks: Uint8Array[];
     reserve: number;
   }) {
-    var buf = new OffsetBuffer()
-    for (var i = 0; i < frame.chunks.length; i++) { buf.push(frame.chunks[i]) }
+    const buf = new OffsetBuffer()
+    for (let i = 0; i < frame.chunks.length; i++) { buf.push(frame.chunks[i]) }
 
-    var frames = new Array<{
+    const frames = new Array<{
       chunks: Uint8Array[];
       size: number;
     }>();
     while (!buf.isEmpty()) {
       // First frame may have reserved bytes in it
-      var size = this.maxFrameSize
+      let size = this.maxFrameSize
       if (frames.length === 0) {
         size -= frame.reserve
       }
       size = Math.min(size, buf.size)
 
-      var frameBuf = buf.clone(size)
+      const frameBuf = buf.clone(size)
       buf.skip(size)
 
       frames.push({
@@ -131,12 +131,12 @@ export class Framer extends BaseFramer {
     body: (buf: WriteBuffer) => void,
     // callback,
   ) {
-    var frames = this._split(frame)
+    const frames = this._split(frame)
 
     let promise: Promise<unknown> | null = null;
     for (const [i, subFrame] of frames.entries()) {
-      let isFirst = i === 0
-      let isLast = i === frames.length - 1
+      const isFirst = i === 0
+      const isLast = i === frames.length - 1
 
       let flags = isLast ? constants.flags.END_HEADERS : 0
 
@@ -155,7 +155,7 @@ export class Framer extends BaseFramer {
         if (isFirst && body) { body(buf) }
 
         buf.reserve(subFrame.size)
-        for (var i = 0; i < subFrame.chunks.length; i++) {
+        for (let i = 0; i < subFrame.chunks.length; i++) {
           buf.copyFrom(subFrame.chunks[i])
         }
       })
@@ -176,7 +176,7 @@ export class Framer extends BaseFramer {
 
   _compressHeaders(headers: SpdyHeaders, pairs: HpackHeader[]) {
     for (const [name, value] of Object.entries(headers)) {
-      var lowName = name.toLowerCase()
+      const lowName = name.toLowerCase()
 
       // Not allowed in HTTP2
       switch (lowName) {
@@ -195,7 +195,7 @@ export class Framer extends BaseFramer {
       }
 
       // Do not compress, or index Cookie field (for security reasons)
-      var neverIndex = lowName === 'cookie' || lowName === 'set-cookie'
+      const neverIndex = lowName === 'cookie' || lowName === 'set-cookie'
 
       if (Array.isArray(value)) {
         for (const subValue of value) {
@@ -250,7 +250,7 @@ export class Framer extends BaseFramer {
   }
 
   async _headersFrame(kind: 'request' | 'response' | 'headers', frame: Http2RequestOptions) {
-    var pairs: HpackHeader[] = []
+    const pairs: HpackHeader[] = []
 
     if (kind === 'request') {
       this._defaultHeaders(frame, pairs)
@@ -258,24 +258,23 @@ export class Framer extends BaseFramer {
       pairs.push({ name: ':status', value: (frame.status || 200) + '' })
     }
 
-    var self = this
     const chunks = this._compressHeaders(frame.headers, pairs);
 
-    var reserve = 0
+    let reserve = 0
 
     // If priority info is present, and the values are not default ones
     // reserve space for the priority info and add PRIORITY flag
-    var priority = frame.priority
-    if (!self._isDefaultPriority(priority)) { reserve = 5 }
+    const priority = frame.priority
+    if (!this._isDefaultPriority(priority)) { reserve = 5 }
 
-    var flags = reserve === 0 ? 0 : constants.flags.PRIORITY
+    let flags = reserve === 0 ? 0 : constants.flags.PRIORITY
 
     // Mostly for testing
     if (frame.fin) {
       flags |= constants.flags.END_STREAM
     }
 
-    await self._continuationFrame({
+    await this._continuationFrame({
       id: frame.id,
       type: 'HEADERS',
       flags: flags,
@@ -306,20 +305,18 @@ export class Framer extends BaseFramer {
   }
 
   async pushFrame(frame: Http2RequestOptions & {response?: SpdyHeaders}) {
-    var self = this
-
     await this._checkPush();
 
-    var pairs = {
+    const pairs = {
       promise: new Array<HpackHeader>(),
       response: new Array<HpackHeader>(),
     }
 
-    self._defaultHeaders(frame, pairs.promise)
+    this._defaultHeaders(frame, pairs.promise)
     pairs.response.push({ name: ':status', value: (frame.status || 200) + '' })
 
-    const promiseChunks = self._compressHeaders(frame.headers, pairs.promise);
-    await self._continuationFrame({
+    const promiseChunks = this._compressHeaders(frame.headers, pairs.promise);
+    await this._continuationFrame({
       id: frame.id,
       type: 'PUSH_PROMISE',
       reserve: 4,
@@ -330,17 +327,17 @@ export class Framer extends BaseFramer {
     })
 
     if (frame.response) {
-      const responseChunks = self._compressHeaders(frame.response, pairs.response);
-      var priority = frame.priority
-      var isDefaultPriority = self._isDefaultPriority(priority)
-      var flags = isDefaultPriority ? 0 : constants.flags.PRIORITY
+      const responseChunks = this._compressHeaders(frame.response, pairs.response);
+      const priority = frame.priority
+      const isDefaultPriority = this._isDefaultPriority(priority)
+      let flags = isDefaultPriority ? 0 : constants.flags.PRIORITY
 
       // Mostly for testing
       if (frame.fin) {
         flags |= constants.flags.END_STREAM
       }
 
-      await self._continuationFrame({
+      await this._continuationFrame({
         id: frame.promisedId,
         type: 'HEADERS',
         flags: flags,
@@ -366,24 +363,29 @@ export class Framer extends BaseFramer {
       type: 'PRIORITY',
       flags: 0
     }, function (buf) {
-      var priority = frame.priority
+      const priority = frame.priority
       buf.writeUInt32BE((priority.exclusive ? 0x80000000 : 0) |
                         priority.parent)
       buf.writeUInt8((priority.weight | 0) - 1)
     })
   }
 
-  async dataFrame (frame: DataFrame) {
-    var frames = this._split({
+  async dataFrame (frame: {
+    id: number;
+    fin: boolean;
+    data: Uint8Array;
+    priority: false | number;
+  }) {
+    const frames = this._split({
       reserve: 0,
       chunks: [ frame.data ]
     })
 
-    var fin = frame.fin ? constants.flags.END_STREAM : 0
+    const fin = frame.fin ? constants.flags.END_STREAM : 0
 
     for (const [i, subFrame] of frames.entries()) {
-      var isLast = i === frames.length - 1
-      var flags = 0
+      const isLast = i === frames.length - 1
+      let flags = 0
       if (isLast) {
         flags |= fin
       }
@@ -395,7 +397,7 @@ export class Framer extends BaseFramer {
         flags: flags
       }, function (buf) {
         buf.reserve(subFrame.size)
-        for (var i = 0; i < subFrame.chunks.length; i++) { buf.copyFrom(subFrame.chunks[i]) }
+        for (let i = 0; i < subFrame.chunks.length; i++) { buf.copyFrom(subFrame.chunks[i]) }
       })
     }
 
@@ -406,7 +408,7 @@ export class Framer extends BaseFramer {
         priority: frame.priority,
         type: 'DATA',
         flags: fin
-      }, function (buf) {
+      }, function () {
         // No-op
       })
     }
@@ -450,9 +452,9 @@ export class Framer extends BaseFramer {
   }
 
   async settingsFrame (options: Partial<Record<constants.SettingsKey,number>>) {
-    var key = JSON.stringify(options)
+    const key = JSON.stringify(options)
 
-    var settings = Framer.settingsCache[key]
+    const settings = Framer.settingsCache[key]
     if (settings) {
       // debug('cached settings')
       this._resetTimeout()
@@ -465,9 +467,9 @@ export class Framer extends BaseFramer {
       return
     }
 
-    var params: Array<{key: number, value: number}> = []
-    for (var i = 0; i < constants.settingsIndex.length; i++) {
-      var name = constants.settingsIndex[i]
+    const params: Array<{key: number, value: number}> = []
+    for (let i = 0; i < constants.settingsIndex.length; i++) {
+      const name = constants.settingsIndex[i]
       if (!name) { continue }
 
       const value = options[name];
@@ -481,16 +483,16 @@ export class Framer extends BaseFramer {
       }
     }
 
-    var bodySize = params.length * 6
+    const bodySize = params.length * 6
 
-    var frame = await this._frame({
+    const frame = await this._frame({
       type: 'SETTINGS',
       id: 0,
       flags: 0
     }, function (buffer) {
       buffer.reserve(bodySize)
-      for (var i = 0; i < params.length; i++) {
-        var param = params[i]
+      for (let i = 0; i < params.length; i++) {
+        const param = params[i]
 
         buffer.writeUInt16BE(param.key)
         buffer.writeUInt32BE(param.value)
@@ -507,7 +509,7 @@ export class Framer extends BaseFramer {
       id: 0,
       type: 'SETTINGS',
       flags: constants.flags.ACK
-    }, function (buffer) {
+    }, function () {
       // No-op
     })
   }

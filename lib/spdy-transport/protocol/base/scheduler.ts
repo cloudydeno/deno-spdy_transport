@@ -77,8 +77,8 @@ export class Scheduler extends EventEmitter {
       return this.sync;
     }
 
-    var item: SchedulerItem = { stream, priority, queue: [] };
-    var index = binaryLookup(this.list, item, insertCompare)
+    let item: SchedulerItem = { stream, priority, queue: [] };
+    const index = binaryLookup(this.list, item, insertCompare)
 
     if (index >= this.list.length || insertCompare(this.list[index], item) !== 0) {
       // Create new item
@@ -117,7 +117,7 @@ export class Scheduler extends EventEmitter {
       return
     }
 
-    var startPriority = this.list[0].priority
+    const startPriority = this.list[0].priority
     for (const current of this.list) {
       if (startPriority - current.priority > this.windowSize) break;
 

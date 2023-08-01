@@ -241,18 +241,18 @@ export class Connection extends EventEmitter {
     let directions = {inbound: this.socket.readable, outbound: this._spdyState.framer.readable};
 
     // If the user wants, we tap the socket and write (decrypted) packets to a .pcap file
-    let pcapOutPath = Deno.env.get('DEBUG_WRITE_PCAP_FILE');
-    let teePromise: Promise<unknown> = Promise.resolve([]);
+    const pcapOutPath = Deno.env.get('DEBUG_WRITE_PCAP_FILE');
+    // let teePromise: Promise<unknown> = Promise.resolve([]);
     if (pcapOutPath) {
       const tees = {inbound: directions.inbound.tee(), outbound: directions.outbound.tee()};
       directions = {inbound: tees.inbound[0], outbound: tees.outbound[0]};
       // TODO: 6121 for SPDY or whatever port wireshark checks for HTTP2, or just frame properly
-      const text2pcap = Deno.run({
-        cmd: ['text2pcap', '-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
+      const text2pcap = new Deno.Command('test2pcap', {
+        args: ['-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
         stdin: 'piped',
         stdout: 'inherit',
         stderr: 'inherit',
-      });
+      }).spawn();
       // const packetFlow =
         merge(
           tees.inbound[1].pipeThrough(map(x => ({dir: 'I', date: new Date(), data: x}))),
@@ -261,8 +261,8 @@ export class Connection extends EventEmitter {
         .pipeThrough(map(x => `${x.dir} ${x.date.toISOString()}\n000000 ${bytesAsHex(x.data)}\n`))
         // .pipeThrough(forEach(x => console.error(x)))
         .pipeThrough(new TextEncoderStream())
-        .pipeTo(text2pcap.stdin.writable);//.then(() => console.error('closed'));
-      text2pcap.status();
+        .pipeTo(text2pcap.stdin);//.then(() => console.error('closed'));
+      // text2pcap.status;
       // teePromise = Promise.all([packetFlow, text2pcap.status]);
     }
 
@@ -285,45 +285,44 @@ export class Connection extends EventEmitter {
   }
 
   _init () {
-    var self = this
-    var state = this._spdyState
-    var pool = state.pool
+    const state = this._spdyState
+    // const pool = state.pool
 
     // Initialize session window
-    state.window.recv.on('drain', function () {
-      self._onSessionWindowDrain()
+    state.window.recv.on('drain', () => {
+      this._onSessionWindowDrain()
     })
 
     // Initialize parser
-    // state.parser.on('data', function (frame) {
+    // state.parser.on('data', (frame) => {
     //   self._handleFrame(frame)
     // })
-    state.parser.once('version', function (version) {
-      self._onVersion(version)
+    state.parser.once('version', (version) => {
+      this._onVersion(version)
     })
 
     // Propagate parser errors
-    state.parser.on('error', function (err) {
-      self._onParserError(err)
+    state.parser.on('error', (err) => {
+      this._onParserError(err)
     })
 
     // Propagate framer errors
-    state.framer.on('error', function (err) {
-      self.emit('error', err)
+    state.framer.on('error', (err) => {
+      this.emit('error', err)
     })
 
     // Allow high-level api to catch socket errors
-    // this.socket.on('error', function onSocketError (e) {
+    // this.socket.on('error', onSocketError (e) => {
     //   self.emit('error', e)
     // })
 
     // Reset timeout on close
-    this.once('close', function () {
-      self.setTimeout(0)
+    this.once('close', () => {
+      this.setTimeout(0)
     })
 
-    function _onWindowOverflow () {
-      self._onWindowOverflow()
+    const _onWindowOverflow = () => {
+      this._onWindowOverflow()
     }
 
     state.window.recv.on('overflow', _onWindowOverflow)
@@ -336,7 +335,7 @@ export class Connection extends EventEmitter {
   _handleClose(reason?: string) {
     console.error('_handleClose', {reason})
 
-    var err: Error & {code?: string} | null = null;
+    let err: Error & {code?: string} | null = null;
     if (reason) {
       err = new Error('socket hang up: '+reason)
       err.code = 'ECONNRESET'
@@ -354,11 +353,11 @@ export class Connection extends EventEmitter {
   }
 
   _onVersion (version: 2 | 3 | 3.1) {
-    var state = this._spdyState
-    var prev = state.version
-    var parser = state.parser
-    var framer = state.framer
-    var pool = state.pool
+    const state = this._spdyState
+    const prev = state.version
+    const parser = state.parser
+    const framer = state.framer
+    const pool = state.pool
 
     state.version = version
     // state.debug('id=0 version=%d', version)
@@ -393,7 +392,7 @@ export class Connection extends EventEmitter {
   }
 
   _onParserError (err: Error) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Prevent further errors
     state.parser.kill()
@@ -412,7 +411,7 @@ export class Connection extends EventEmitter {
   }
 
   async _handleFrame (frame: FrameUnion) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // state.debug('id=0 frame', frame)
     state.timeout.reset()
@@ -441,7 +440,7 @@ export class Connection extends EventEmitter {
       return
     }
 
-    var stream: Stream | null = null;
+    let stream: Stream | null = null;
 
     if (!stream && frame.id !== undefined) {
       // Load created one
@@ -491,7 +490,7 @@ export class Connection extends EventEmitter {
   }
 
   _onWindowOverflow () {
-    var state = this._spdyState
+    const state = this._spdyState
     // state.debug('id=0 window overflow')
     this._goaway({
       lastId: state.stream.lastId.both,
@@ -501,25 +500,25 @@ export class Connection extends EventEmitter {
   }
 
   _isGoaway (id: number) {
-    var state = this._spdyState
+    const state = this._spdyState
     if (state.goaway !== false && state.goaway < id) { return true }
     return false
   }
 
   _getId () {
-    var state = this._spdyState
+    const state = this._spdyState
 
-    var id = state.stream.nextId
+    const id = state.stream.nextId
     state.stream.nextId += 2
     return id
   }
 
   _createStream (uri: CreateStreamOptions) {
-    var state = this._spdyState
-    var id = uri.id
+    const state = this._spdyState
+    let id = uri.id
     if (id === undefined) { id = this._getId() }
 
-    var isGoaway = this._isGoaway(id)
+    let isGoaway = this._isGoaway(id)
 
     if (uri.push && !state.acceptPush) {
       // state.debug('id=0 push disabled promisedId=%d', id)
@@ -533,7 +532,7 @@ export class Connection extends EventEmitter {
       isGoaway = true
     }
 
-    var stream = new Stream(this, {
+    const stream = new Stream(this, {
       id: id,
       request: uri.request !== false,
       method: uri.method,
@@ -545,7 +544,6 @@ export class Connection extends EventEmitter {
       readable: !isGoaway && !!uri.readable,
       writable: !isGoaway && !!uri.writable
     })
-    var self = this
 
     // Just an empty stream for API consistency
     if (isGoaway) {
@@ -562,15 +560,15 @@ export class Connection extends EventEmitter {
       state.counters.push++
     }
 
-    stream.once('close', function () {
-      self._removeStream(stream)
+    stream.once('close', () => {
+      this._removeStream(stream)
     })
 
     return stream
   }
 
   _handleHeaders (frame: HeadersFrame) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Must be HEADERS frame after stream close
     if (frame.id <= state.stream.lastId.received) { return }
@@ -582,12 +580,12 @@ export class Connection extends EventEmitter {
     }
 
     assert(frame.headers);
-    var stream = this._createStream({
+    const stream = this._createStream({
       id: frame.id,
       request: false,
-      method: frame.headers[':method'],
-      path: frame.headers[':path'],
-      host: frame.headers[':authority'],
+      method: frame.headers[':method'] as string,
+      path: frame.headers[':path'] as string,
+      host: frame.headers[':authority'] as string,
       priority: frame.priority,
       headers: frame.headers,
       writable: frame.writable
@@ -619,12 +617,12 @@ export class Connection extends EventEmitter {
   }
 
   _onSessionWindowDrain () {
-    var state = this._spdyState
+    const state = this._spdyState
     if ((state.version ?? 0) < 3.1 && !(state.isServer && state.autoSpdy31)) {
       return
     }
 
-    var delta = state.window.recv.getDelta()
+    const delta = state.window.recv.getDelta()
     if (delta === 0) {
       return
     }
@@ -648,7 +646,7 @@ export class Connection extends EventEmitter {
   }
 
   _handleSettings (settings: Record<string,number|undefined>) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.framer.ackSettingsFrame()
 
@@ -661,6 +659,7 @@ export class Connection extends EventEmitter {
         const h2framer = state.framer as http2Protocol.framer;
         h2framer.hpackCompressor?.updateTableSize(settings.header_table_size)
       } catch (e) {
+        console.warn(`error processing header_table_size: ${e.message}`);
         this._goaway({
           lastId: 0,
           code: 'PROTOCOL_ERROR',
@@ -689,24 +688,23 @@ export class Connection extends EventEmitter {
       return
     }
 
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Update defaults
-    var window = state.streamWindow
+    const window = state.streamWindow
     window.send.setMax(settings.initial_window_size)
 
     // Update existing streams
     Object.keys(state.stream.map).forEach(function (id) {
-      var stream = state.stream.map[id]
-      var window = stream._spdyState.window
+      const stream = state.stream.map[id]
+      const window = stream._spdyState.window
 
       window.send.updateMax(settings.initial_window_size!)
     })
   }
 
   _handlePing (frame: PingFrame) {
-    var self = this
-    var state = this._spdyState
+    const state = this._spdyState
 
     // Handle incoming PING
     if (!frame.ack) {
@@ -715,16 +713,16 @@ export class Connection extends EventEmitter {
         ack: true
       })
 
-      self.emit('ping', frame.opaque)
+      this.emit('ping', frame.opaque)
       return
     }
 
     // Handle reply PING
-    var hex = bytesAsHex(frame.opaque)
+    const hex = bytesAsHex(frame.opaque)
     if (!state.ping.map[hex]) {
       return
     }
-    var ping = state.ping.map[hex]
+    const ping = state.ping.map[hex]
     delete state.ping.map[hex]
 
     if (ping.cb) {
@@ -741,12 +739,12 @@ export class Connection extends EventEmitter {
   }
 
   ping (callback: ClassicCallback) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // HTTP2 is using 8-byte opaque
-    var opaque = new Uint8Array(state.constants.PING_OPAQUE_SIZE)
+    const opaque = new Uint8Array(state.constants.PING_OPAQUE_SIZE)
     opaque.fill(0)
-    new DataView(opaque).setUint32(opaque.length - 4, state.ping.nextId, false)
+    new DataView(opaque.buffer).setUint32(opaque.length - 4, state.ping.nextId, false)
     state.ping.nextId += 2
 
     state.ping.map[bytesAsHex(opaque)] = { cb: callback }
@@ -761,7 +759,7 @@ export class Connection extends EventEmitter {
   }
 
   reserveStream (uri: CreateStreamOptions) {
-    var stream = this._createStream(uri)
+    const stream = this._createStream(uri)
 
     // GOAWAY
     if (this._isGoaway(stream.id)) {
@@ -772,7 +770,7 @@ export class Connection extends EventEmitter {
   }
 
   async request (uri: CreateStreamOptions) {
-    var stream = this.reserveStream(uri);
+    const stream = this.reserveStream(uri);
 
     if (!stream._wasSent()) {
       await stream.send();
@@ -782,7 +780,7 @@ export class Connection extends EventEmitter {
   }
 
   _removeStream (stream: Stream) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     // state.debug('id=0 remove stream=%d', stream.id)
     delete state.stream.map[stream.id]
@@ -799,14 +797,13 @@ export class Connection extends EventEmitter {
     send?: boolean;
     extra?: string;
   }) {
-    var state = this._spdyState
-    var self = this
+    const state = this._spdyState
 
     state.goaway = params.lastId
     // state.debug('id=0 goaway from=%d', state.goaway)
 
     Object.keys(state.stream.map).forEach(function (id) {
-      var stream = state.stream.map[id]
+      const stream = state.stream.map[id]
 
       // Abort every stream started after GOAWAY
       if (stream.id <= params.lastId) {
@@ -821,7 +818,7 @@ export class Connection extends EventEmitter {
       // Make sure that GOAWAY frame is sent before dumping framer
       await state.framer.goawayFrame({
         lastId: params.lastId,
-        code: params.code,
+        code: params.code as 'OK', // TODO: figure out exception code mappings
         extra: params.extra
       })
     }
@@ -831,7 +828,7 @@ export class Connection extends EventEmitter {
       // No further frames should be processed
       state.parser.kill()
 
-      self._onStreamDrain(new Error('Fatal error: ' + params.code))
+      this._onStreamDrain(new Error('Fatal error: ' + params.code))
       return
     }
 
@@ -839,7 +836,7 @@ export class Connection extends EventEmitter {
   }
 
   _onStreamDrain (error?: Error | null) {
-  //   var state = this._spdyState
+  //   const state = this._spdyState
 
     // state.debug('id=0 _onStreamDrain')
 
@@ -854,7 +851,7 @@ export class Connection extends EventEmitter {
   }
 
   async end (callback?: ClassicCallback) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     if (callback) {
       this.once('close', callback)
@@ -869,9 +866,9 @@ export class Connection extends EventEmitter {
   }
 
   destroyStreams (err?: Error | null) {
-    var state = this._spdyState
+    const state = this._spdyState
     Object.keys(state.stream.map).forEach(function (id) {
-      var stream = state.stream.map[id]
+      const stream = state.stream.map[id]
 
       stream.destroy()
       if (err) {
@@ -889,7 +886,7 @@ export class Connection extends EventEmitter {
   }
 
   sendXForwardedFor (host: string) {
-    var state = this._spdyState
+    const state = this._spdyState
     if (state.version !== null) {
       state.framer.xForwardedFor({ host: host })
     } else {
@@ -898,9 +895,9 @@ export class Connection extends EventEmitter {
   }
 
   async pushPromise (parent: Stream, uri: CreatePushOptions) {
-    var state = this._spdyState
+    const state = this._spdyState
 
-    var stream = this._createStream({
+    const stream = this._createStream({
       request: false,
       parent: parent,
       method: uri.method,
@@ -927,7 +924,7 @@ export class Connection extends EventEmitter {
   }
 
   setTimeout (delay: number, callback?: ClassicCallback) {
-    var state = this._spdyState
+    const state = this._spdyState
 
     state.timeout.set(delay, callback)
   }

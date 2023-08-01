@@ -12,14 +12,14 @@ export class CompressionPool {
 
   get (version: 2 | 3 | 3.1 | 4) {
 
-    var options = {
+    const options = {
       table: {
         maxSize: HEADER_TABLE_SIZE
       }
     }
 
-    var compress = new Compressor(options)
-    var decompress = new Decompressor(options)
+    const compress = new Compressor(options)
+    const decompress = new Decompressor(options)
 
     return {
       version: version,

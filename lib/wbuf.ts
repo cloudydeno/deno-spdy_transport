@@ -40,7 +40,7 @@ export class WriteBuffer {
     // Force reservation of extra bytes
     if (this.forceReserve)
       this.toReserve = Math.max(this.toReserve, this.reserveRate);
-  };
+  }
 
   _ensure(n: number) {
     if (this.avail >= n)
@@ -53,10 +53,10 @@ export class WriteBuffer {
 
     if (this.avail === 0)
       this._next();
-  };
+  }
 
   _next() {
-    var buf: Uint8Array;
+    let buf: Uint8Array;
     if (this.sliceQueue === null) {
       // Most common case
       buf = new Uint8Array(this.toReserve);
@@ -73,12 +73,12 @@ export class WriteBuffer {
     this.avail = buf.length;
     this.offset = 0;
     this.last = buf;
-  };
+  }
 
   _rangeCheck() {
     if (this.maxSize !== 0 && this.size > this.maxSize)
       throw new RangeError('WBuf overflow');
-  };
+  }
 
   _move(n: number) {
     this.size += n;
@@ -86,7 +86,7 @@ export class WriteBuffer {
       this.last = null;
 
     this._rangeCheck();
-  };
+  }
 
   slice(start: number, end: number) {
     assert(0 <= start && start <= this.size);
@@ -95,7 +95,7 @@ export class WriteBuffer {
     if (this.last === null)
       this._next();
 
-    var res = new WriteBuffer();
+    const res = new WriteBuffer();
 
     // Only last chunk is requested
     if (start >= this.size - this.offset) {
@@ -109,15 +109,15 @@ export class WriteBuffer {
       return res;
     }
 
-    var startIndex = -1;
-    var startOffset = 0;
-    var endIndex = -1;
+    let startIndex = -1;
+    let startOffset = 0;
+    let endIndex = -1;
 
     // Find buffer indices
-    var offset = 0;
-    for (var i = 0; i < this.buffers.length; i++) {
-      var buf = this.buffers[i];
-      var next = offset + buf.length;
+    let offset = 0;
+    for (let i = 0; i < this.buffers.length; i++) {
+      const buf = this.buffers[i];
+      const next = offset + buf.length;
 
       // Found the start
       if (start >= offset && start <= next) {
@@ -151,7 +151,7 @@ export class WriteBuffer {
     res.buffers.push(res.last);
 
     return res;
-  };
+  }
 
   skip(n: number) {
     if (n === 0)
@@ -159,9 +159,9 @@ export class WriteBuffer {
 
     this._ensure(n);
 
-    var left = n;
+    let left = n;
     while (left > 0) {
-      var toSkip = Math.min(left, this.avail);
+      const toSkip = Math.min(left, this.avail);
       left -= toSkip;
       this.size += toSkip;
       if (toSkip === this.avail) {
@@ -180,40 +180,40 @@ export class WriteBuffer {
     this._rangeCheck();
 
     return this.slice(this.size - n, this.size);
-  };
+  }
 
   write(str: string) {
     // TODO: textencode?
-    var len = 0;
-    for (var i = 0; i < str.length; i++) {
-      var c = str.charCodeAt(i);
+    let len = 0;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
       if (c > 255)
         len += 2;
       else
         len += 1;
     }
     this.reserve(len);
-    for (var i = 0; i < str.length; i++) {
-      var c = str.charCodeAt(i);
-      var hi = c >>> 8;
-      var lo = c & 0xff;
+    for (let i = 0; i < str.length; i++) {
+      const c = str.charCodeAt(i);
+      const hi = c >>> 8;
+      const lo = c & 0xff;
 
       if (hi)
         this.writeUInt8(hi);
       this.writeUInt8(lo);
     }
-  };
+  }
 
   copyFrom(buf: Uint8Array, start?: number, end?: number) {
-    var off = start === undefined ? 0 : start;
-    var len = end === undefined ? buf.length : end;
+    let off = start === undefined ? 0 : start;
+    const len = end === undefined ? buf.length : end;
     if (off === len)
       return;
 
     this._ensure(len - off);
     assert(this.last);
     while (off < len) {
-      var toCopy = Math.min(len - off, this.avail);
+      const toCopy = Math.min(len - off, this.avail);
       // buf.copy(this.last, this.offset, off, off + toCopy);
       this.last.set(buf.slice(off, off + toCopy), this.offset);
       off += toCopy;
@@ -232,7 +232,7 @@ export class WriteBuffer {
     }
 
     this._rangeCheck();
-  };
+  }
 
   writeUInt8(v: number) {
     this._ensure(1);
@@ -241,7 +241,7 @@ export class WriteBuffer {
     this.last[this.offset++] = v;
     this.avail--;
     this._move(1);
-  };
+  }
 
   writeUInt16BE(v: number) {
     this._ensure(2);
@@ -262,7 +262,7 @@ export class WriteBuffer {
     }
 
     this._move(2);
-  };
+  }
 
   writeUInt24BE(v: number) {
     this._ensure(3);
@@ -291,7 +291,7 @@ export class WriteBuffer {
       this._next();
       this.writeUInt16BE(v & 0xffff);
     }
-  };
+  }
 
   writeUInt32BE(v: number) {
     this._ensure(4);
@@ -317,17 +317,17 @@ export class WriteBuffer {
       this.writeUInt16BE(v >>> 16);
       this.writeUInt16BE(v & 0xffff);
     }
-  };
+  }
 
   writeUInt16LE(num: number) {
-    var r = ((num & 0xff) << 8) | (num >>> 8);
+    const r = ((num & 0xff) << 8) | (num >>> 8);
     this.writeUInt16BE(r);
-  };
+  }
 
   writeUInt24LE(num: number) {
-    var r = ((num & 0xff) << 16) | (((num >>> 8) & 0xff) << 8) | (num >>> 16);
+    const r = ((num & 0xff) << 16) | (((num >>> 8) & 0xff) << 8) | (num >>> 16);
     this.writeUInt24BE(r);
-  };
+  }
 
   writeUInt32LE(num: number) {
     this._ensure(4);
@@ -353,14 +353,14 @@ export class WriteBuffer {
       this.writeUInt16LE(num & 0xffff);
       this.writeUInt16LE(num >>> 16);
     }
-  };
+  }
 
   render() {
-    var left = this.size;
-    var out = [];
+    let left = this.size;
+    const out = [];
 
-    for (var i = 0; i < this.buffers.length && left >= 0; i++) {
-      var buf = this.buffers[i];
+    for (let i = 0; i < this.buffers.length && left >= 0; i++) {
+      const buf = this.buffers[i];
       left -= buf.length;
       if (left >= 0) {
         out.push(buf);
@@ -370,7 +370,7 @@ export class WriteBuffer {
     }
 
     return out;
-  };
+  }
 
   // Signed APIs
   writeInt8(num: number) {
@@ -378,31 +378,31 @@ export class WriteBuffer {
       return this.writeUInt8(0x100 + num);
     else
       return this.writeUInt8(num);
-  };
+  }
 
   writeInt16LE(num: number) {
     this.writeUInt16LE(toUnsigned16(num));
-  };
+  }
 
   writeInt16BE(num: number) {
     this.writeUInt16BE(toUnsigned16(num));
-  };
+  }
 
   writeInt24LE(num: number) {
     this.writeUInt24LE(toUnsigned24(num));
-  };
+  }
 
   writeInt24BE(num: number) {
     this.writeUInt24BE(toUnsigned24(num));
-  };
+  }
 
   writeInt32LE(num: number) {
     this.writeUInt32LE(toUnsigned32(num));
-  };
+  }
 
   writeInt32BE(num: number) {
     this.writeUInt32BE(toUnsigned32(num));
-  };
+  }
 
   writeComb(size: number, endian: 'le' | 'be', value: number) {
     if (size === 1)

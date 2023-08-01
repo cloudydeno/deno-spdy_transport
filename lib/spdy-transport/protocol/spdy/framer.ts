@@ -18,7 +18,7 @@ type FrameIds = {
 
 export type SpdyRequestOptions = {
   id: number;
-  method: string;
+  method?: string;
   path?: string;
   host?: string;
   priority: PriorityJson;
@@ -40,7 +40,7 @@ export class Framer extends BaseFramer {
     return new Framer(options)
   }
 
-  setMaxFrameSize (size: number) {
+  setMaxFrameSize () {
     // http2-only
   }
 
@@ -60,7 +60,7 @@ export class Framer extends BaseFramer {
     }
 
     // Lower case of all headers keys
-    var loweredHeaders: SpdyHeaders = {}
+    const loweredHeaders: SpdyHeaders = {}
     Object.keys(headers || {}).map(function (key) {
       loweredHeaders[key.toLowerCase()] = headers[key]
     })
@@ -69,10 +69,10 @@ export class Framer extends BaseFramer {
     if (preprocess) { preprocess(loweredHeaders) }
 
     // Transform object into kv pairs
-    var size = this.version === 2 ? 2 : 4
-    var len = size
-    var pairs = Object.keys(loweredHeaders).filter((key) => {
-      var lkey = key.toLowerCase()
+    const size = this.version === 2 ? 2 : 4
+    let len = size
+    const pairs = Object.keys(loweredHeaders).filter((key) => {
+      const lkey = key.toLowerCase()
 
       // Will be in `:host`
       if (lkey === 'host' && (this.version ?? 0) >= 3) {
@@ -82,15 +82,15 @@ export class Framer extends BaseFramer {
       return lkey !== 'connection' && lkey !== 'keep-alive' &&
             lkey !== 'proxy-connection' && lkey !== 'transfer-encoding'
     }, this).map(function (key) {
-      var klen = new TextEncoder().encode(key).byteLength
-      var value = stringify(loweredHeaders[key])
-      var vlen = new TextEncoder().encode(value).byteLength
+      const klen = new TextEncoder().encode(key).byteLength
+      const value = stringify(loweredHeaders[key])
+      const vlen = new TextEncoder().encode(value).byteLength
 
       len += size * 2 + klen + vlen
       return [klen, key, vlen, value] as const
     })
 
-    var block = new WriteBuffer()
+    const block = new WriteBuffer()
     block.reserve(len)
 
     if (this.version === 2) {
@@ -136,22 +136,22 @@ export class Framer extends BaseFramer {
 
     // debug('id=%d type=%s', frame.id, frame.type)
 
-    var buffer = new WriteBuffer()
+    const buffer = new WriteBuffer()
 
     buffer.writeUInt16BE(0x8000 | this.version)
     buffer.writeUInt16BE(constants.frameType[frame.type] ?? 0)
     buffer.writeUInt8(frame.flags ?? 0)
-    var len = buffer.skip(3)
+    const len = buffer.skip(3)
 
     body(buffer)
 
-    var frameSize = buffer.size - constants.FRAME_HEADER_SIZE
+    const frameSize = buffer.size - constants.FRAME_HEADER_SIZE
     len.writeUInt24BE(frameSize)
 
-    var chunks = buffer.render()
+    const chunks = buffer.render()
     assertEquals(typeof frame.id, "number");
     await new Promise(ok => {
-      var toWrite: WritableData = {
+      const toWrite: WritableData = {
         stream: frame.id,
         priority: false,
         chunks: chunks,
@@ -166,21 +166,19 @@ export class Framer extends BaseFramer {
   }
 
   async _synFrame (frame: SpdyRequestOptions) {
-    var self = this
-
     if (!frame.path) {
       throw new Error('`path` is required frame argument')
     }
 
-    function preprocess (headers: SpdyHeaders) {
-      var method = frame.method || DEFAULT_METHOD
-      var version = frame.version || 'HTTP/1.1'
-      var scheme = frame.scheme || 'https'
-      var host = frame.host ||
+    const chunks = await this.headersToDict(frame.headers, (headers: SpdyHeaders) => {
+      const method = frame.method || DEFAULT_METHOD
+      const version = frame.version || 'HTTP/1.1'
+      const scheme = frame.scheme || 'https'
+      const host = frame.host ||
                 (frame.headers && frame.headers.host) ||
                 DEFAULT_HOST
 
-      if (self.version === 2) {
+      if (this.version === 2) {
         headers.method = method
         headers.version = version
         headers.url = frame.path
@@ -197,11 +195,9 @@ export class Framer extends BaseFramer {
         headers[':host'] = host
         if (frame.status) { headers[':status'] = frame.status }
       }
-    }
+    });
 
-    const chunks = await this.headersToDict(frame.headers, preprocess);
-
-    await self._frame({
+    await this._frame({
       type: 'SYN_STREAM',
       id: frame.id,
       flags: frame.fin ? constants.flags.FLAG_FIN : 0
@@ -211,11 +207,11 @@ export class Framer extends BaseFramer {
       buf.writeUInt32BE(frame.id & 0x7fffffff)
       buf.writeUInt32BE((frame.associated ?? 0) & 0x7fffffff)
 
-      var weight = (frame.priority && frame.priority.weight) ||
+      const weight = (frame.priority && frame.priority.weight) ||
                   constants.DEFAULT_WEIGHT
 
       // We only have 3 bits for priority in SPDY, try to fit it into this
-      var priority = weightToPriority(weight)
+      const priority = weightToPriority(weight)
       buf.writeUInt8(priority << 5)
 
       // CREDENTIALS slot
@@ -248,15 +244,13 @@ export class Framer extends BaseFramer {
     status: keyof typeof constants.statusReason;
     headers: SpdyHeaders;
   }) {
-    var self = this
-
-    var reason = frame.reason
+    let reason = frame.reason
     if (!reason) {
       reason = constants.statusReason[frame.status]
     }
 
     const chunks = await this.headersToDict(frame.headers, headers => {
-      if (self.version === 2) {
+      if (this.version === 2) {
         headers.status = frame.status + ' ' + reason
         headers.version = 'HTTP/1.1'
       } else {
@@ -269,17 +263,17 @@ export class Framer extends BaseFramer {
       type: 'SYN_REPLY',
       id: frame.id,
       flags: 0
-    }, function (buf) {
-      buf.reserve(self.version === 2 ? 6 : 4)
+    }, (buf) => {
+      buf.reserve(this.version === 2 ? 6 : 4)
 
       buf.writeUInt32BE(frame.id & 0x7fffffff)
 
       // Unused data
-      if (self.version === 2) {
+      if (this.version === 2) {
         buf.writeUInt16BE(0)
       }
 
-      for (var i = 0; i < chunks.length; i++) {
+      for (let i = 0; i < chunks.length; i++) {
         buf.copyFrom(chunks[i])
       }
     })
@@ -312,23 +306,21 @@ export class Framer extends BaseFramer {
     headers: SpdyHeaders;
     id: number;
   }) {
-    var self = this
-
     const chunks = await this.headersToDict(frame.headers, null);
 
-    await self._frame({
+    await this._frame({
       type: 'HEADERS',
       id: frame.id,
       priority: false,
       flags: 0
-    }, function (buf) {
-      buf.reserve(4 + (self.version === 2 ? 2 : 0))
+    }, (buf) => {
+      buf.reserve(4 + (this.version === 2 ? 2 : 0))
       buf.writeUInt32BE(frame.id & 0x7fffffff)
 
       // Unused data
-      if (self.version === 2) { buf.writeUInt16BE(0) }
+      if (this.version === 2) { buf.writeUInt16BE(0) }
 
-      for (var i = 0; i < chunks.length; i++) {
+      for (let i = 0; i < chunks.length; i++) {
         buf.copyFrom(chunks[i])
       }
     })
@@ -350,7 +342,7 @@ export class Framer extends BaseFramer {
 
     // debug('id=%d type=DATA', frame.id)
 
-    var buffer = new WriteBuffer()
+    const buffer = new WriteBuffer()
     buffer.reserve(8 + frame.data.length)
 
     buffer.writeUInt32BE(frame.id & 0x7fffffff)
@@ -358,22 +350,21 @@ export class Framer extends BaseFramer {
     buffer.writeUInt24BE(frame.data.length)
     buffer.copyFrom(frame.data)
 
-    var chunks = buffer.render()
+    const chunks = buffer.render()
     await new Promise(ok => {
-      var toWrite: WritableData = {
+      const toWrite: WritableData = {
         stream: frame.id,
         priority: frame.priority,
         chunks: chunks,
         callback: ok
       }
 
-      var self = this
       this._resetTimeout()
 
-      var bypass = (this.version ?? 0) < 3.1
-      this.window.send.update(-frame.data.length, bypass ? undefined : function () {
-        self._resetTimeout()
-        self.schedule(toWrite)
+      const bypass = (this.version ?? 0) < 3.1
+      this.window.send.update(-frame.data.length, bypass ? undefined : () => {
+        this._resetTimeout()
+        this.schedule(toWrite)
       })
 
       if (bypass) {
@@ -394,7 +385,7 @@ export class Framer extends BaseFramer {
     }, function (buf) {
       buf.reserve(4)
 
-      var opaque = frame.opaque
+      const opaque = frame.opaque
       buf.copyFrom(opaque, opaque.length - 4)
       // buf.writeUInt32BE(opaque.readUInt32BE(opaque.length - 4, true))
     })
@@ -429,11 +420,9 @@ export class Framer extends BaseFramer {
   }
 
   async settingsFrame (options: Partial<Record<SpdySettingsKey,number>>) {
-    var self = this
+    const key = this.version + '/' + JSON.stringify(options)
 
-    var key = this.version + '/' + JSON.stringify(options)
-
-    var settings = Framer.settingsCache[key]
+    const settings = Framer.settingsCache[key]
     if (settings) {
       // debug('cached settings')
       this._resetTimeout()
@@ -446,9 +435,9 @@ export class Framer extends BaseFramer {
       return
     }
 
-    var params: Array<{key: number, value: number}> = []
-    for (var i = 0; i < constants.settingsIndex.length; i++) {
-      var name = constants.settingsIndex[i]
+    const params: Array<{key: number, value: number}> = []
+    for (let i = 0; i < constants.settingsIndex.length; i++) {
+      const name = constants.settingsIndex[i]
       if (!name) { continue }
 
       const value = options[name];
@@ -462,24 +451,24 @@ export class Framer extends BaseFramer {
       }
     }
 
-    var frame = await this._frame({
+    const frame = await this._frame({
       type: 'SETTINGS',
       id: 0,
       flags: 0
-    }, function (buf) {
+    }, (buf) => {
       buf.reserve(4 + 8 * params.length)
 
       // Count of entries
       buf.writeUInt32BE(params.length)
 
-      params.forEach(function (param) {
-        var flag = constants.settings.FLAG_SETTINGS_PERSIST_VALUE << 24
+      for (const param of params) {
+        const flag = constants.settings.FLAG_SETTINGS_PERSIST_VALUE << 24
 
-        if (self.version === 2) {
+        if (this.version === 2) {
           buf.writeUInt32LE(flag | param.key)
         } else { buf.writeUInt32BE(flag | param.key) }
         buf.writeUInt32BE(param.value & 0x7fffffff)
-      })
+      }
     })
 
     if (frame) {
@@ -528,7 +517,7 @@ export class Framer extends BaseFramer {
     })
   }
 
-  async priorityFrame (frame: {
+  async priorityFrame (_frame: {
     priority: PriorityJson;
   }) {
     // No such thing in SPDY

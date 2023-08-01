@@ -27,7 +27,7 @@ export abstract class Parser<Tframe> extends EventEmitter {
 
         // Read as many full frames as we can find
         while (this.buffer.size >= this.waiting) {
-          var content = this.buffer.clone(this.waiting)
+          const content = this.buffer.clone(this.waiting)
           this.buffer.skip(this.waiting)
 
           const frames = await this.execute(content);
@@ -38,7 +38,7 @@ export abstract class Parser<Tframe> extends EventEmitter {
 
         // Partial DATA frame or something that we can process partially
         if (this.partial && this.buffer.size > 0) {
-          var partial = this.buffer.clone(this.buffer.size)
+          const partial = this.buffer.clone(this.buffer.size)
           this.buffer.skip(partial.size)
           this.waiting -= partial.size
 

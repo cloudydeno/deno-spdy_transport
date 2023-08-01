@@ -29,11 +29,11 @@ export class Parser extends BaseParser<FrameUnion> {
 
   error = error
 
-  setMaxFrameSize (size: number) {
+  setMaxFrameSize () {
     // http2-only
   }
 
-  setMaxHeaderListSize (size: number) {
+  setMaxHeaderListSize () {
     // http2-only
   }
 
@@ -49,7 +49,7 @@ export class Parser extends BaseParser<FrameUnion> {
 
     assert(this.state === 'frame-body' && this.pendingHeader !== null)
 
-    var header = this.pendingHeader
+    const header = this.pendingHeader
     this.pendingHeader = null
 
     const frame = await this.onFrameBody(header, buffer);
@@ -62,14 +62,14 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   async executePartial (buffer: OffsetBuffer): Promise<Frames> {
-    var header = this.pendingHeader
+    const header = this.pendingHeader
 
     if (this.window) {
       this.window.recv.update(-buffer.size)
     }
 
     // DATA frame
-    return [{
+    return await [{
       type: 'DATA',
       id: header!.id!,
 
@@ -80,7 +80,7 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   async onFrameHead (buffer: OffsetBuffer) {
-    var header: FrameHeader = {
+    const header: FrameHeader = {
       control: (buffer.peekUInt8() & 0x80) === 0x80,
       flags: -1,
       length: -1,
@@ -107,6 +107,7 @@ export class Parser extends BaseParser<FrameUnion> {
     this.waiting = header.length
     this.pendingHeader = header
     this.partial = !header.control
+    await null;
   }
 
   async onFrameBody (header: FrameHeader, buffer: OffsetBuffer): Promise<Frames> {
@@ -161,11 +162,11 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   _filterHeader (headers: SpdyHeaders, name: string) {
-    var res: SpdyHeaders = {}
-    var keys = Object.keys(headers)
+    const res: SpdyHeaders = {}
+    const keys = Object.keys(headers)
 
-    for (var i = 0; i < keys.length; i++) {
-      var key = keys[i]
+    for (let i = 0; i < keys.length; i++) {
+      const key = keys[i]
       if (key !== name) {
         res[key] = headers[key]
       }
@@ -177,15 +178,15 @@ export class Parser extends BaseParser<FrameUnion> {
   async onSynHeadFrame (type: number,
     flags: number,
     body: OffsetBuffer): Promise<Frames> {
-    var self = this
-    var stream = type === 0x01
-    var offset = stream ? 10 : this.version === 2 ? 6 : 4
+
+    const stream = type === 0x01
+    const offset = stream ? 10 : this.version === 2 ? 6 : 4
 
     if (!body.has(offset)) {
       throw new Error('SynHead OOB')
     }
 
-    var head = body.clone(offset)
+    const head = body.clone(offset)
     body.skip(offset)
     const headers = await this.parseKVs(body);
 
@@ -194,25 +195,25 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('Missing `:method` and/or `:path` header')
     }
 
-    var id = head.readUInt32BE() & 0x7fffffff
+    const id = head.readUInt32BE() & 0x7fffffff
 
     if (id === 0) {
-      throw self.error("PROTOCOL_ERROR",
+      throw this.error("PROTOCOL_ERROR",
         'Invalid stream id for HEADERS')
     }
 
-    var associated = stream ? head.readUInt32BE() & 0x7fffffff : 0
-    var priority = stream
+    const associated = stream ? head.readUInt32BE() & 0x7fffffff : 0
+    const priority = stream
       ? head.readUInt8() >> 5
       : weightToPriority(DEFAULT_WEIGHT)
-    var fin = (flags & flagConstants.FLAG_FIN) !== 0
-    var unidir = (flags & flagConstants.FLAG_UNIDIRECTIONAL) !== 0
-    var path = headers[':path']
+    const fin = (flags & flagConstants.FLAG_FIN) !== 0
+    const unidir = (flags & flagConstants.FLAG_UNIDIRECTIONAL) !== 0
+    const path = headers[':path']
 
-    var isPush = stream && associated !== 0
+    const isPush = stream && associated !== 0
 
-    var weight = priorityToWeight(priority)
-    var priorityInfo = {
+    const weight = priorityToWeight(priority)
+    const priorityInfo = {
       weight: weight,
       exclusive: false,
       parent: 0
@@ -234,7 +235,7 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('Missing `:status` header')
     }
 
-    var filteredHeaders = self._filterHeader(headers, ':status')
+    const filteredHeaders = this._filterHeader(headers, ':status')
 
     return [ {
       type: 'PUSH_PROMISE',
@@ -257,12 +258,12 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   async onHeaderFrames (body: OffsetBuffer): Promise<Frames> {
-    var offset = this.version === 2 ? 6 : 4
+    const offset = this.version === 2 ? 6 : 4
     if (!body.has(offset)) {
       throw new Error('HEADERS OOB')
     }
 
-    var streamId = body.readUInt32BE() & 0x7fffffff
+    const streamId = body.readUInt32BE() & 0x7fffffff
     if (this.version === 2) { body.skip(2) }
 
     const headers = await this.parseKVs(body);
@@ -282,49 +283,49 @@ export class Parser extends BaseParser<FrameUnion> {
     }]
   }
 
-  async parseKVs (buffer: OffsetBuffer) {
+  async parseKVs (bufferOrig: OffsetBuffer) {
     const chunks = await new Promise<Uint8Array[]>((ok, fail) => {
-      this.decompress!.write(buffer.toChunks(), (err, chunks) => {
+      this.decompress!.write(bufferOrig.toChunks(), (err, chunks) => {
         if (err) { fail(err); } else { ok(chunks!); }
       });
     });
 
-    var buffer = new OffsetBuffer()
-    for (var i = 0; i < chunks.length; i++) {
+    const buffer = new OffsetBuffer()
+    for (let i = 0; i < chunks.length; i++) {
       buffer.push(chunks[i])
     }
 
-    var size = this.version === 2 ? 2 : 4
+    const size = this.version === 2 ? 2 : 4
     if (!buffer.has(size)) { throw new Error('KV OOB') }
 
-    var count = this.version === 2
+    let count = this.version === 2
       ? buffer.readUInt16BE()
       : buffer.readUInt32BE()
 
-    var headers: SpdyHeaders = {}
+    const headers: SpdyHeaders = {}
 
     const readString = () => {
       if (!buffer.has(size)) { return null }
-      var len = this.version === 2
+      const len = this.version === 2
         ? buffer.readUInt16BE()
         : buffer.readUInt32BE()
 
       if (!buffer.has(len)) { return null }
 
-      var value = buffer.take(len)
+      const value = buffer.take(len)
       return new TextDecoder().decode(value)
     }
 
     while (count > 0) {
-      var key = readString()
-      var value = readString()
+      let key = readString()
+      let value = readString()
 
       if (key === null || value === null) {
         throw new ProtocolError('INTERNAL_ERROR', 'Headers OOB')
       }
 
       if (this.version! < 3) {
-        var isInternal = /^(method|version|url|host|scheme|status)$/.test(key)
+        const isInternal = /^(method|version|url|host|scheme|status)$/.test(key)
         if (key === 'url') {
           key = 'path'
         }
@@ -359,7 +360,7 @@ export class Parser extends BaseParser<FrameUnion> {
   onRSTFrame (body: OffsetBuffer): Frames {
     if (!body.has(8)) { throw new Error('RST OOB') }
 
-    var frame: RstFrame = {
+    const frame: RstFrame = {
       type: 'RST',
       id: body.readUInt32BE() & 0x7fffffff,
       code: errorByCode[body.readUInt32BE()]
@@ -381,9 +382,9 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('SETTINGS OOB')
     }
 
-    var settings: Partial<Record<SpdySettingsKey,number>> = {}
-    var number = body.readUInt32BE()
-    var idMap: Record<string,SpdySettingsKey> = {
+    const settings: Partial<Record<SpdySettingsKey,number>> = {}
+    const number = body.readUInt32BE()
+    const idMap: Record<string,SpdySettingsKey> = {
       1: 'upload_bandwidth',
       2: 'download_bandwidth',
       3: 'round_trip_time',
@@ -398,18 +399,18 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('SETTINGS OOB#2')
     }
 
-    for (var i = 0; i < number; i++) {
-      var id = this.version === 2
+    for (let i = 0; i < number; i++) {
+      let id = this.version === 2
         ? body.readUInt32LE()
         : body.readUInt32BE()
 
-      var flags = (id >> 24) & 0xff
+      const flags = (id >> 24) & 0xff
       id = id & 0xffffff
 
       // Skip persisted settings
       if (flags & 0x2) { continue }
 
-      var name = idMap[id]
+      const name = idMap[id]
 
       settings[name] = body.readUInt32BE()
     }
@@ -425,10 +426,10 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('PING OOB')
     }
 
-    var isServer = this.isServer
-    var opaque = body.clone(body.size).take(body.size)
-    var id = body.readUInt32BE()
-    var ack = isServer ? (id % 2 === 0) : (id % 2 === 1)
+    const isServer = this.isServer
+    const opaque = body.clone(body.size).take(body.size)
+    const id = body.readUInt32BE()
+    const ack = isServer ? (id % 2 === 0) : (id % 2 === 1)
 
     return [{ type: 'PING', opaque, ack }]
   }
@@ -462,7 +463,7 @@ export class Parser extends BaseParser<FrameUnion> {
       throw new Error('X_FORWARDED OOB')
     }
 
-    var len = body.readUInt32BE()
+    const len = body.readUInt32BE()
     if (!body.has(len)) { throw new Error('X_FORWARDED host length OOB') }
 
     return [{

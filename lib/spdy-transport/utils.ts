@@ -27,8 +27,8 @@ export class Queue extends QueueItem {
   }
 
   remove(item: QueueItem) {
-    var next = item.next
-    var prev = item.prev
+    const next = item.next
+    const prev = item.prev
 
     item.next = item
     item.prev = item
@@ -65,37 +65,35 @@ export class LockStream {
   }
 
   write (chunks: Uint8Array[], callback: ClassicCallback<Uint8Array[]>) {
-    var self = this
-
     // Do not let it interleave
     if (this.locked) {
-      this.queue.push(function () {
-        return self.write(chunks, callback)
+      this.queue.push(() => {
+        return this.write(chunks, callback)
       })
       return
     }
 
     this.locked = true
 
-    function done (err?: Error | null, chunks?: Uint8Array[]) {
-      self.stream.removeListener('error', done)
+    const done = (err?: Error | null, chunks?: Uint8Array[]) => {
+      this.stream.removeListener('error', done)
 
-      self.locked = false
-      if (self.queue.length > 0) { self.queue.shift()!() }
+      this.locked = false
+      if (this.queue.length > 0) { this.queue.shift()!() }
       callback(err, chunks)
     }
 
     this.stream.on('error', done)
 
     // Accumulate all output data
-    var output: Uint8Array[] = []
+    const output: Uint8Array[] = []
     function onData (chunk: Buffer) {
       output.push(chunk)
     }
     this.stream.on('data', onData)
 
-    function next (err?: Error | null) {
-      self.stream.removeListener('data', onData)
+    const next = (err?: Error | null) => {
+      this.stream.removeListener('data', onData)
       if (err) {
         return done(err)
       }
@@ -103,18 +101,19 @@ export class LockStream {
       done(null, output)
     }
 
-    for (var i = 0; i < chunks.length - 1; i++) { this.stream.write(chunks[i]) }
+    let i: number;
+    for (i = 0; i < chunks.length - 1; i++) { this.stream.write(chunks[i]) }
 
     if (chunks.length > 0) {
       this.stream.write(chunks[i], next)
     } else { queueMicrotask(next) }
 
-    if ((this.stream as any).execute) {
-      console.error(`stream execute`);
-      (this.stream as any).execute(function (err?: Error | null) {
-        if (err) { return done(err) }
-      })
-    }
+    // if ((this.stream as any).execute) {
+    //   console.error(`stream execute`);
+    //   (this.stream as any).execute(function (err?: Error | null) {
+    //     if (err) { return done(err) }
+    //   })
+    // }
   }
 }
 
@@ -162,7 +161,7 @@ export class InflateDeflateQueue extends QueuingMutex<Uint8Array[],Uint8Array[]>
   async transformOne(chunks: Uint8Array[]): Promise<Uint8Array[]> {
 
     // Accumulate all output data
-    var output: Uint8Array[] = []
+    const output: Uint8Array[] = []
     function onData (chunk: Buffer) {
       output.push(chunk)
     }
@@ -184,12 +183,12 @@ export class InflateDeflateQueue extends QueuingMutex<Uint8Array[],Uint8Array[]>
 
 // Just finds the place in array to insert
 export function binaryLookup<T> (list: T[], item: T, compare: (a: T, b: T) => number) {
-  var start = 0
-  var end = list.length
+  let start = 0
+  let end = list.length
 
   while (start < end) {
-    var pos = (start + end) >> 1
-    var cmp = compare(item, list[pos])
+    const pos = (start + end) >> 1
+    const cmp = compare(item, list[pos])
 
     if (cmp === 0) {
       start = pos
@@ -206,13 +205,13 @@ export function binaryLookup<T> (list: T[], item: T, compare: (a: T, b: T) => nu
 }
 
 export function binaryInsert<T> (list: T[], item: T, compare: (a: T, b: T) => number) {
-  var index = binaryLookup(list, item, compare)
+  const index = binaryLookup(list, item, compare)
 
   list.splice(index, 0, item)
 }
 
 export function binarySearch<T> (list: T[], item: T, compare: (a: T, b: T) => number) {
-  var index = binaryLookup(list, item, compare)
+  const index = binaryLookup(list, item, compare)
 
   if (index >= list.length) {
     return -1
@@ -256,10 +255,9 @@ export class Timeout {
 
     if (this.delay === 0) { return }
 
-    var self = this
-    this.timer = setTimeout(function () {
-      self.timer = null
-      self.object.emit('timeout')
+    this.timer = setTimeout(() => {
+      this.timer = null
+      this.object.emit('timeout')
     }, this.delay)
   }
 }

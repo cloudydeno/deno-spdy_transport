@@ -85,26 +85,25 @@ export class Parser extends BaseParser<FrameUnion> {
 
     assert(this.state === 'frame-body' && this.pendingHeader !== null)
 
-    var self = this
-    var header = this.pendingHeader
+    const header = this.pendingHeader
     this.pendingHeader = null
 
     const frame = await this.onFrameBody(header, buffer);
 
-    self.state = 'frame-head'
-    self.partial = false
-    self.waiting = constants.FRAME_HEADER_SIZE
+    this.state = 'frame-head'
+    this.partial = false
+    this.waiting = constants.FRAME_HEADER_SIZE
     return frame;
   }
 
   async executePartial (buffer: OffsetBuffer): Promise<Frames> {
-    var header = this.pendingHeader!
+    const header = this.pendingHeader!
 
     assertEquals(header.flags & constants.flags.PADDED, 0)
 
     if (this.window) { this.window.recv.update(-buffer.size) }
 
-    return [{
+    return await [{
       type: 'DATA',
       id: header.id!,
 
@@ -124,7 +123,7 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   onFrameHead (buffer: OffsetBuffer) {
-    var header = {
+    const header = {
       length: buffer.readUInt24BE(),
       control: true,
       type: buffer.readUInt8(),
@@ -151,7 +150,7 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   onFrameBody (header: FrameHeader, buffer: OffsetBuffer): Frames {
-    var frameType = constants.frameType
+    const frameType = constants.frameType
 
     if (header.type === frameType.DATA) {
       return this.onDataFrame(header, buffer)
@@ -180,7 +179,7 @@ export class Parser extends BaseParser<FrameUnion> {
     }
   }
 
-  onUnknownFrame (header: FrameHeader, buffer: OffsetBuffer): Frames {
+  onUnknownFrame (header: FrameHeader, _buffer: OffsetBuffer): Frames {
     if (this._lastHeaderBlock !== null) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'Received unknown frame in the middle of a header block')
@@ -190,7 +189,7 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   unpadData (header: FrameHeader, body: OffsetBuffer) {
-    var isPadded = (header.flags & constants.flags.PADDED) !== 0
+    const isPadded = (header.flags & constants.flags.PADDED) !== 0
 
     if (!isPadded) { return body }
 
@@ -199,19 +198,19 @@ export class Parser extends BaseParser<FrameUnion> {
         'Not enough space for padding')
     }
 
-    var pad = body.readUInt8()
+    const pad = body.readUInt8()
     if (!body.has(pad)) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'Invalid padding size')
     }
 
-    var contents = body.clone(body.size - pad)
+    const contents = body.clone(body.size - pad)
     body.skip(body.size)
     return contents
   }
 
   onDataFrame (header: FrameHeader, body: OffsetBuffer): Frames {
-    var isEndStream = (header.flags & constants.flags.END_STREAM) !== 0
+    const isEndStream = (header.flags & constants.flags.END_STREAM) !== 0
 
     if (header.id === 0) {
       throw this.error(constants.error.PROTOCOL_ERROR,
@@ -250,24 +249,23 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   queueHeaderBlock (header: FrameHeader, block: OffsetBuffer) {
-    var self = this
-    var item = this._lastHeaderBlock
+    const item = this._lastHeaderBlock
     assert(item);
     if (!this._lastHeaderBlock || item.id !== header.id) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'No matching stream for continuation')
     }
 
-    var fin = (header.flags & constants.flags.END_HEADERS) !== 0
+    const fin = (header.flags & constants.flags.END_HEADERS) !== 0
 
-    var chunks1 = block.toChunks()
-    for (var i = 0; i < chunks1.length; i++) {
-      var chunk = chunks1[i]
+    const chunks1 = block.toChunks()
+    for (let i = 0; i < chunks1.length; i++) {
+      const chunk = chunks1[i]
       item.queue.push(chunk)
       item.size += chunk.length
     }
 
-    if (item.size >= self.maxHeaderListSize) {
+    if (item.size >= this.maxHeaderListSize) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'Compressed header list is too large')
     }
@@ -282,18 +280,18 @@ export class Parser extends BaseParser<FrameUnion> {
       throw this.error(constants.error.COMPRESSION_ERROR, err.message);
     }
 
-    var headers: SpdyHeaders = {}
-    var size = 0
+    const headers: SpdyHeaders = {}
+    let size = 0
     for (const header of chunks) {
 
       size += header.name.length + header.value.length + 32
-      if (size >= self.maxHeaderListSize) {
-        throw self.error(constants.error.PROTOCOL_ERROR,
+      if (size >= this.maxHeaderListSize) {
+        throw this.error(constants.error.PROTOCOL_ERROR,
           'Header list is too large')
       }
 
       if (/[A-Z]/.test(header.name)) {
-        throw self.error(constants.error.PROTOCOL_ERROR,
+        throw this.error(constants.error.PROTOCOL_ERROR,
           'Header name must be lowercase')
       }
 
@@ -307,8 +305,6 @@ export class Parser extends BaseParser<FrameUnion> {
   }
 
   onHeadersFrame (header: FrameHeader, body: OffsetBuffer) {
-    var self = this
-
     if (header.id === 0) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'Invalid stream id for HEADERS')
@@ -316,15 +312,15 @@ export class Parser extends BaseParser<FrameUnion> {
 
     const data = this.unpadData(header, body);
 
-    var isPriority = (header.flags & constants.flags.PRIORITY) !== 0
+    const isPriority = (header.flags & constants.flags.PRIORITY) !== 0
     if (!data.has(isPriority ? 5 : 0)) {
-      throw self.error(constants.error.FRAME_SIZE_ERROR,
+      throw this.error(constants.error.FRAME_SIZE_ERROR,
         'Not enough data for HEADERS')
     }
 
-    var exclusive = false
-    var dependency = 0
-    var weight = constants.DEFAULT_WEIGHT
+    let exclusive = false
+    let dependency = 0
+    let weight = constants.DEFAULT_WEIGHT
     if (isPriority) {
       dependency = data.readUInt32BE()
       exclusive = (dependency & 0x80000000) !== 0
@@ -335,11 +331,11 @@ export class Parser extends BaseParser<FrameUnion> {
     }
 
     if (dependency === header.id) {
-      throw self.error(constants.error.PROTOCOL_ERROR,
+      throw this.error(constants.error.PROTOCOL_ERROR,
         'Stream can\'t dependend on itself')
     }
 
-    var streamInfo: HeadersFrame = {
+    const streamInfo: HeadersFrame = {
       type: 'HEADERS',
       id: header.id!,
       priority: {
@@ -353,7 +349,7 @@ export class Parser extends BaseParser<FrameUnion> {
       path: null
     }
 
-    return self.initHeaderBlock(header, streamInfo, data)
+    return this.initHeaderBlock(header, streamInfo, data)
   }
 
   onContinuationFrame (header: FrameHeader, body: OffsetBuffer) {
@@ -407,7 +403,7 @@ export class Parser extends BaseParser<FrameUnion> {
         'Invalid stream id for SETTINGS')
     }
 
-    var isAck = (header.flags & constants.flags.ACK) !== 0
+    const isAck = (header.flags & constants.flags.ACK) !== 0
     if (isAck && body.size !== 0) {
       throw this.error(constants.error.FRAME_SIZE_ERROR,
         'SETTINGS with ACK and non-zero length')
@@ -422,11 +418,11 @@ export class Parser extends BaseParser<FrameUnion> {
         'SETTINGS length not multiple of 6')
     }
 
-    var settings: SettingsDict = {}
+    const settings: SettingsDict = {}
     while (!body.isEmpty()) {
-      var id = body.readUInt16BE()
-      var value = body.readUInt32BE()
-      var name = constants.settingsIndex[id]
+      const id = body.readUInt16BE()
+      const value = body.readUInt32BE()
+      const name = constants.settingsIndex[id]
 
       if (name) {
         settings[name] = value
@@ -447,15 +443,14 @@ export class Parser extends BaseParser<FrameUnion> {
         'Invalid stream id for PUSH_PROMISE')
     }
 
-    var self = this
     const data = this.unpadData(header, body)
 
     if (!data.has(4)) {
-      throw self.error(constants.error.FRAME_SIZE_ERROR,
+      throw this.error(constants.error.FRAME_SIZE_ERROR,
         'PUSH_PROMISE length less than 4')
     }
 
-    var streamInfo: PushPromiseFrame = {
+    const streamInfo: PushPromiseFrame = {
       type: 'PUSH_PROMISE',
       id: header.id!,
       fin: false,
@@ -464,7 +459,7 @@ export class Parser extends BaseParser<FrameUnion> {
       path: null
     }
 
-    return self.initHeaderBlock(header, streamInfo, data)
+    return this.initHeaderBlock(header, streamInfo, data)
   }
 
   onPingFrame (header: FrameHeader, body: OffsetBuffer): Frames {
@@ -478,7 +473,7 @@ export class Parser extends BaseParser<FrameUnion> {
         'Invalid stream id for PING')
     }
 
-    var ack = (header.flags & constants.flags.ACK) !== 0
+    const ack = (header.flags & constants.flags.ACK) !== 0
     return [{ type: 'PING', opaque: body.take(body.size), ack: ack }];
   }
 
@@ -493,7 +488,7 @@ export class Parser extends BaseParser<FrameUnion> {
         'Invalid stream id for GOAWAY')
     }
 
-    var frame: FrameUnion = {
+    const frame: FrameUnion = {
       type: 'GOAWAY',
       lastId: body.readUInt32BE(),
       code: constants.goawayByCode[body.readUInt32BE()]
@@ -515,10 +510,10 @@ export class Parser extends BaseParser<FrameUnion> {
         'Invalid stream id for PRIORITY')
     }
 
-    var dependency = body.readUInt32BE()
+    const dependency = body.readUInt32BE()
 
     // Again the range is from 1 to 256
-    var weight = body.readUInt8() + 1
+    const weight = body.readUInt8() + 1
 
     if (dependency === header.id) {
       throw this.error(constants.error.PROTOCOL_ERROR,
@@ -542,7 +537,7 @@ export class Parser extends BaseParser<FrameUnion> {
         'WINDOW_UPDATE length != 4')
     }
 
-    var delta = body.readInt32BE()
+    const delta = body.readInt32BE()
     if (delta === 0) {
       throw this.error(constants.error.PROTOCOL_ERROR,
         'WINDOW_UPDATE delta == 0')
@@ -555,7 +550,7 @@ export class Parser extends BaseParser<FrameUnion> {
     }]
   }
 
-  onXForwardedFrame (header: FrameHeader, body: OffsetBuffer): Frames {
+  onXForwardedFrame (_header: FrameHeader, body: OffsetBuffer): Frames {
     return [{
       type: 'X_FORWARDED_FOR',
       host: body.take(body.size).toString()

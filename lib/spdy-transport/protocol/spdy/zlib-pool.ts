@@ -5,7 +5,7 @@ import { dictionary } from "./dictionary.ts";
 // TODO(indutny): think about it, why has it always been Z_SYNC_FLUSH here.
 // It should be possible to manually flush stuff after the write instead
 function _createDeflate (version: 2|3|3.1, compression: boolean) {
-  var deflate = createDeflate({
+  const deflate = createDeflate({
     dictionary: Buffer.from(dictionary[version]),
     flush: constants.Z_SYNC_FLUSH,
     windowBits: 11,
@@ -16,7 +16,7 @@ function _createDeflate (version: 2|3|3.1, compression: boolean) {
 }
 
 function _createInflate (version: 2|3|3.1) {
-  var inflate = createInflate({
+  const inflate = createInflate({
     dictionary: Buffer.from(dictionary[version]),
     flush: constants.Z_SYNC_FLUSH
   })
@@ -50,7 +50,7 @@ export class CompressionPool {
     if (this.pool[version].length > 0) {
       return this.pool[version].pop()!
     } else {
-      var id = version
+      const id = version
 
       return {
         version: version,

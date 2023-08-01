@@ -82,21 +82,21 @@ export class PriorityNode {
     this.tree._removeNode(this)
 
     // Move all children to the parent
-    for (var i = 0; i < this.children.list.length; i++) {
+    for (let i = 0; i < this.children.list.length; i++) {
       this.parent.addChild(this.children.list[i])
     }
   }
 
   removeChild (child: PriorityNode) {
     this.children.weight -= child.weight
-    var index = binarySearch(this.children.list, child, compareChildren)
+    const index = binarySearch(this.children.list, child, compareChildren)
     if (index !== -1 && this.children.list.length >= index) {
       this.children.list.splice(index, 1)
     }
   }
 
   removeChildren () {
-    var children = this.children.list
+    const children = this.children.list
     this.children.list = []
     this.children.weight = 0
     return children
@@ -107,10 +107,10 @@ export class PriorityNode {
     this.priorityFrom = from
     this.priorityTo = to
 
-    var weight = 0
-    for (var i = 0; i < this.children.list.length; i++) {
-      var node = this.children.list[i]
-      var nextWeight = weight + node.weight
+    let weight = 0
+    for (let i = 0; i < this.children.list.length; i++) {
+      const node = this.children.list[i]
+      const nextWeight = weight + node.weight
 
       node._updatePriority(
         from + this.priority * (weight / this.children.weight),
@@ -164,7 +164,7 @@ export class PriorityTree {
       return this.addDefault(options.id)
     }
 
-    var parent = options.parent == null ? null : this.map[options.parent]
+    const parent = options.parent == null ? null : this.map[options.parent]
     if (parent === undefined) {
       return this.addDefault(options.id)
     }
@@ -175,12 +175,12 @@ export class PriorityTree {
     //   options.weight || this.defaultWeight,
     //   options.exclusive ? 1 : 0)
 
-    var children: PriorityNode[] | null = null
+    let children: PriorityNode[] | null = null
     if (options.exclusive) {
       children = parent!.removeChildren()
     }
 
-    var node = new PriorityNode(this, {
+    const node = new PriorityNode(this, {
       id: options.id,
       parent: parent,
       weight: options.weight || this.defaultWeight
@@ -188,7 +188,7 @@ export class PriorityTree {
     this.map[options.id] = node
 
     if (children) {
-      for (var i = 0; i < children.length; i++) {
+      for (let i = 0; i < children.length; i++) {
         node.addChild(children[i])
       }
     }
@@ -219,7 +219,7 @@ export class PriorityTree {
 
   _removeNode (node: PriorityNode) {
     delete this.map[node.id]
-    var index = binarySearch(this.list, node, compareChildren)
+    const index = binarySearch(this.list, node, compareChildren)
     this.list.splice(index, 1)
     this.count--
   }

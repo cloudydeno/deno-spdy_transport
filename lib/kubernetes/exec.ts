@@ -1,4 +1,4 @@
-import { JSONValue } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/contract.ts";
+import { JSONValue } from "https://deno.land/x/kubernetes_client@v0.5.2/lib/contract.ts";
 import { Connection, Stream } from "../spdy-transport.ts"
 import { KubeConfigSpdyTunnelClient } from "./tunnel-client.ts";
 import { single } from "https://deno.land/x/stream_observables@v1.3/sinks/single.ts";

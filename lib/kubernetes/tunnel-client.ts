@@ -1,6 +1,6 @@
 import { Connection } from "../spdy-transport.ts"
-import { KubeConfig, KubeConfigContext } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/kubeconfig.ts";
-import { JSONValue } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/contract.ts";
+import { KubeConfig, KubeConfigContext } from "https://deno.land/x/kubernetes_client@v0.5.2/lib/kubeconfig.ts";
+import { JSONValue } from "https://deno.land/x/kubernetes_client@v0.5.2/lib/contract.ts";
 
 export class KubeConfigSpdyTunnelClient {
   constructor(
@@ -15,37 +15,19 @@ export class KubeConfigSpdyTunnelClient {
   }
   defaultNamespace?: string;
 
-  // TODO: this logic is duplicated from
-  // https://github.com/cloudydeno/deno-kubernetes_client/blob/main/transports/via-kubeconfig.ts
   static async forKubeConfig(
     config: KubeConfig,
     contextName?: string,
   ) {
-    console.log(config, contextName)
     const ctx = config.fetchContext(contextName);
 
-    let userCert = atob(ctx.user["client-certificate-data"] ?? '') || null;
-    if (!userCert && ctx.user["client-certificate"]) {
-      userCert = await Deno.readTextFile(ctx.user["client-certificate"]);
-    }
-
-    let userKey = atob(ctx.user["client-key-data"] ?? '') || null;
-    if (!userKey && ctx.user["client-key"]) {
-      userKey = await Deno.readTextFile(ctx.user["client-key"]);
-    }
-
-    if ((userKey && !userCert) || (!userKey && userCert)) throw new Error(
-      `Within the KubeConfig, client key and certificate must both be provided if either is provided.`);
-
-    let serverCert = atob(ctx.cluster["certificate-authority-data"] ?? '') || null;
-    if (!serverCert && ctx.cluster["certificate-authority"]) {
-      serverCert = await Deno.readTextFile(ctx.cluster["certificate-authority"]);
-    }
+    const clientTls = await ctx.getClientTls();
+    const serverTls = await ctx.getServerTls();
 
     return new KubeConfigSpdyTunnelClient(ctx, {
-      caCerts: serverCert ? [serverCert] : [],
-      certChain: userCert,
-      privateKey: userKey,
+      caCerts: serverTls?.serverCert ? [serverTls.serverCert] : [],
+      certChain: clientTls?.userCert ?? null,
+      privateKey: clientTls?.userKey ?? null,
     });
   }
 

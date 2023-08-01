@@ -1,6 +1,6 @@
 #!/usr/bin/env -S deno run --unstable --allow-env --allow-read --allow-net
 
-import { KubeConfig } from "https://deno.land/x/kubernetes_client@v0.5.0/lib/kubeconfig.ts";
+import { KubeConfig } from "https://deno.land/x/kubernetes_client@v0.5.2/lib/kubeconfig.ts";
 import { merge } from "https://deno.land/x/stream_observables@v1.3/combiners/merge.ts"
 import { bytesAsHex } from "../spdy-transport/utils.ts";
 import { execUsing } from "./exec.ts";

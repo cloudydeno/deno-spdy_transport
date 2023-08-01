@@ -21,6 +21,7 @@ export class KubeConfigSpdyTunnelClient {
     config: KubeConfig,
     contextName?: string,
   ) {
+    console.log(config, contextName)
     const ctx = config.fetchContext(contextName);
 
     let userCert = atob(ctx.user["client-certificate-data"] ?? '') || null;
@@ -68,7 +69,6 @@ export class KubeConfigSpdyTunnelClient {
       return await Deno.startTls(plaintext, {
         ...this.tlsMaterial,
         hostname: 'kubernetes.default.svc',
-        //@ts-expect-error: Unstable parameter.
         alpnProtocols: ['http/1.1'],
       });
     }
@@ -77,7 +77,6 @@ export class KubeConfigSpdyTunnelClient {
       ...this.tlsMaterial,
       hostname: url.hostname,
       port: url.port ? parseInt(url.port) : 443,
-      //@ts-expect-error: Unstable parameter.
       alpnProtocols: ['http/1.1'],
     });
   }

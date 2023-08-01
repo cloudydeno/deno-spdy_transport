@@ -6,7 +6,6 @@ const url = new URL(Deno.args[0]);
 const socket = await Deno.connectTls({
   hostname: url.hostname,
   port: parseInt(url.port || '443'),
-  //@ts-expect-error: Unstable parameter.
   alpnProtocols: ['h2'],
 });
 

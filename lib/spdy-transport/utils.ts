@@ -1,6 +1,6 @@
 import EventEmitter from "node:events";
 import type { Buffer } from "node:buffer";
-import type { Deflate, Inflate } from "node:zlib";
+import { constants, type Deflate, Inflate } from "./protocol/spdy/zlib-pool.ts";
 import type { ClassicCallback } from "./protocol/types.ts";
 
 export class QueueItem {
@@ -75,8 +75,23 @@ export class LockStream {
 
     this.locked = true
 
+    if (this.stream instanceof Inflate) {
+      // TODO: error handling
+      const output: Uint8Array[] = []
+      for (const chunk of chunks) {
+        output.push(this.stream.push(chunk, constants.Z_SYNC_FLUSH));
+      }
+
+      this.locked = false
+      if (this.queue.length > 0) { this.queue.shift()!() }
+      callback(null, output);
+      return;
+    }
+
+    const stream = this.stream;
+
     const done = (err?: Error | null, chunks?: Uint8Array[]) => {
-      this.stream.removeListener('error', done)
+      stream.removeListener('error', done)
 
       this.locked = false
       if (this.queue.length > 0) { this.queue.shift()!() }
@@ -93,7 +108,7 @@ export class LockStream {
     this.stream.on('data', onData)
 
     const next = (err?: Error | null) => {
-      this.stream.removeListener('data', onData)
+      stream.removeListener('data', onData)
       if (err) {
         return done(err)
       }
@@ -160,6 +175,20 @@ export class InflateDeflateQueue extends QueuingMutex<Uint8Array[],Uint8Array[]>
 
   async transformOne(chunks: Uint8Array[]): Promise<Uint8Array[]> {
 
+    if (this.stream instanceof Inflate) {
+      // TODO: error handling
+      const output: Uint8Array[] = []
+      for (const chunk of chunks) {
+        output.push(this.stream.push(chunk, constants.Z_SYNC_FLUSH));
+      }
+
+      this.locked = false
+      if (this.queue.length > 0) { this.queue.shift()!() }
+      return output;
+    }
+
+    const stream = this.stream;
+
     // Accumulate all output data
     const output: Uint8Array[] = []
     function onData (chunk: Buffer) {
@@ -170,7 +199,7 @@ export class InflateDeflateQueue extends QueuingMutex<Uint8Array[],Uint8Array[]>
     try {
       for (const chunk of chunks) {
         await new Promise<void>((ok, fail) => {
-          this.stream.write(chunk, err => err ? fail(err) : ok());
+          stream.write(chunk, err => err ? fail(err) : ok());
         });
       }
 

@@ -1,12 +1,15 @@
 import { Buffer } from 'node:buffer';
-import { createDeflate,constants,createInflate, Deflate, Inflate } from 'node:zlib';
+import { createDeflate,constants,createInflate, Deflate } from 'node:zlib';
+import { Inflate } from "https://deno.land/x/compress@v0.4.5/zlib/mod.ts";
 import { dictionary } from "./dictionary.ts";
+
+export { type Deflate, Inflate, constants };
 
 // TODO(indutny): think about it, why has it always been Z_SYNC_FLUSH here.
 // It should be possible to manually flush stuff after the write instead
 function _createDeflate (version: 2|3|3.1, compression: boolean) {
   const deflate = createDeflate({
-    dictionary: Buffer.from(dictionary[version]),
+    // dictionary: Buffer.from(dictionary[version]),
     flush: constants.Z_SYNC_FLUSH,
     windowBits: 11,
     level: compression ? constants.Z_DEFAULT_COMPRESSION : constants.Z_NO_COMPRESSION
@@ -16,9 +19,9 @@ function _createDeflate (version: 2|3|3.1, compression: boolean) {
 }
 
 function _createInflate (version: 2|3|3.1) {
-  const inflate = createInflate({
-    dictionary: Buffer.from(dictionary[version]),
-    flush: constants.Z_SYNC_FLUSH
+  const inflate = new Inflate({
+    dictionary: dictionary[version],
+    // flush: constants.Z_SYNC_FLUSH
   })
 
   return inflate

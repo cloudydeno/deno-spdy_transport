@@ -247,7 +247,7 @@ export class Connection extends EventEmitter {
       const tees = {inbound: directions.inbound.tee(), outbound: directions.outbound.tee()};
       directions = {inbound: tees.inbound[0], outbound: tees.outbound[0]};
       // TODO: 6121 for SPDY or whatever port wireshark checks for HTTP2, or just frame properly
-      const text2pcap = new Deno.Command('test2pcap', {
+      const text2pcap = new Deno.Command('text2pcap', {
         args: ['-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
         stdin: 'piped',
         stdout: 'inherit',

@@ -99,7 +99,7 @@ class TestContext {
   }
 }
 
-Deno.test('SPDY Parser (v3)', async t => {
+Deno.test({name: 'SPDY Parser (v3)', fn: async t => {
 
   await t.step('SYN_STREAM', async t => {
     await t.step('should parse frame with http header', async () => {
@@ -601,4 +601,4 @@ Deno.test('SPDY Parser (v3)', async t => {
       })
     })
   })
-})
+}, sanitizeResources: false });

@@ -1,4 +1,3 @@
-import { Buffer } from 'node:buffer';
 import { createDeflate,constants,createInflate, Deflate, Inflate } from 'node:zlib';
 import { dictionary } from "./dictionary.ts";
 
@@ -6,7 +5,7 @@ import { dictionary } from "./dictionary.ts";
 // It should be possible to manually flush stuff after the write instead
 function _createDeflate (version: 2|3|3.1, compression: boolean) {
   const deflate = createDeflate({
-    dictionary: Buffer.from(dictionary[version]),
+    dictionary: dictionary[version],
     flush: constants.Z_SYNC_FLUSH,
     windowBits: 11,
     level: compression ? constants.Z_DEFAULT_COMPRESSION : constants.Z_NO_COMPRESSION
@@ -17,7 +16,7 @@ function _createDeflate (version: 2|3|3.1, compression: boolean) {
 
 function _createInflate (version: 2|3|3.1) {
   const inflate = createInflate({
-    dictionary: Buffer.from(dictionary[version]),
+    dictionary: dictionary[version],
     flush: constants.Z_SYNC_FLUSH
   })
 

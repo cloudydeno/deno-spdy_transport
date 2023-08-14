@@ -35,8 +35,8 @@ jobs:
         key: deno-https/v1-${{ github.sha }}
         restore-keys: deno-https/v1-
 
-    # - name: Check mod.ts
-    #   run: time deno check --unstable lib/spdy-transport.ts
+    - name: Check mod.ts
+      run: time deno check lib/mod.ts
 
     - name: Run tests
       run: time deno test test/spdy/v3-parser-test.ts

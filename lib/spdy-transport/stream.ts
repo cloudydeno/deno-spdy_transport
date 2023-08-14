@@ -104,7 +104,9 @@ export class Stream extends EventEmitter {
       isServer: this.connection.isServer(),
       // state.debug = state.isServer ? debug.server : debug.client
 
+      //@ts-expect-error should be a common interface instead of a concrete union
       framer: connectionState.framer,
+      //@ts-expect-error should be a common interface instead of a concrete union
       parser: connectionState.parser,
 
       request: options.request,
@@ -175,9 +177,11 @@ export class Stream extends EventEmitter {
       }
       break;
     case 'HEADERS':
+      //@ts-expect-error optionalness mismatch
       this._handleHeaders(frame);
       break;
     case 'RST':
+      //@ts-expect-error optionalness mismatch
       this._handleRST(frame);
       break;
     case 'WINDOW_UPDATE':
@@ -187,6 +191,7 @@ export class Stream extends EventEmitter {
       this._handlePriority(frame);
       break;
     case 'PUSH_PROMISE':
+      //@ts-expect-error optionalness mismatch
       this._handlePushPromise(frame);
       break;
     }

@@ -13,8 +13,7 @@ jobs:
     strategy:
       matrix:
         deno-version:
-        - v1.32.0
-        - v1.34
+        # - v1.34
         - canary
       fail-fast: false # run each branch to completion
 

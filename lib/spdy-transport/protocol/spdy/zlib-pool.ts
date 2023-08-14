@@ -31,14 +31,8 @@ export type CompressionPair = {
 
 export class CompressionPool {
   compression: boolean;
-  pool: { 2: CompressionPair[]; 3: CompressionPair[]; 3.1: CompressionPair[]; };
   constructor (compression: boolean) {
     this.compression = compression
-    this.pool = {
-      2: [],
-      3: [],
-      3.1: []
-    }
   }
 
   static create (compression: boolean) {
@@ -46,20 +40,15 @@ export class CompressionPool {
   }
 
   get (version: 2|3|3.1) {
-    if (this.pool[version].length > 0) {
-      return this.pool[version].pop()!
-    } else {
-      const id = version
-
-      return {
-        version: version,
-        compress: _createDeflate(id, this.compression),
-        decompress: _createInflate(id),
-      }
+    return {
+      version: version,
+      compress: _createDeflate(version, this.compression),
+      decompress: _createInflate(version),
     }
   }
 
   put (pair: CompressionPair) {
-    this.pool[pair.version].push(pair)
+    pair.compress.close();
+    pair.decompress.close();
   }
 }

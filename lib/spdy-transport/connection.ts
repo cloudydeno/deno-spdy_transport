@@ -238,33 +238,33 @@ export class Connection extends EventEmitter {
   }
 
   async runToCompletion() {
-    let directions = {inbound: this.socket.readable, outbound: this._spdyState.framer.readable};
+    const directions = {inbound: this.socket.readable, outbound: this._spdyState.framer.readable};
 
-    // If the user wants, we tap the socket and write (decrypted) packets to a .pcap file
-    const pcapOutPath = Deno.env.get('DEBUG_WRITE_PCAP_FILE');
-    // let teePromise: Promise<unknown> = Promise.resolve([]);
-    if (pcapOutPath) {
-      const tees = {inbound: directions.inbound.tee(), outbound: directions.outbound.tee()};
-      directions = {inbound: tees.inbound[0], outbound: tees.outbound[0]};
-      // TODO: 6121 for SPDY or whatever port wireshark checks for HTTP2, or just frame properly
-      const text2pcap = new Deno.Command('text2pcap', {
-        args: ['-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
-        stdin: 'piped',
-        stdout: 'inherit',
-        stderr: 'inherit',
-      }).spawn();
-      // const packetFlow =
-        merge(
-          tees.inbound[1].pipeThrough(map(x => ({dir: 'I', date: new Date(), data: x}))),
-          tees.outbound[1].pipeThrough(map(x => ({dir: 'O', date: new Date(), data: x}))),
-        )
-        .pipeThrough(map(x => `${x.dir} ${x.date.toISOString()}\n000000 ${bytesAsHex(x.data)}\n`))
-        // .pipeThrough(forEach(x => console.error(x)))
-        .pipeThrough(new TextEncoderStream())
-        .pipeTo(text2pcap.stdin);//.then(() => console.error('closed'));
-      // text2pcap.status;
-      // teePromise = Promise.all([packetFlow, text2pcap.status]);
-    }
+    // // If the user wants, we tap the socket and write (decrypted) packets to a .pcap file
+    // const pcapOutPath = Deno.env.get('DEBUG_WRITE_PCAP_FILE');
+    // // let teePromise: Promise<unknown> = Promise.resolve([]);
+    // if (pcapOutPath) {
+    //   const tees = {inbound: directions.inbound.tee(), outbound: directions.outbound.tee()};
+    //   directions = {inbound: tees.inbound[0], outbound: tees.outbound[0]};
+    //   // TODO: 6121 for SPDY or whatever port wireshark checks for HTTP2, or just frame properly
+    //   const text2pcap = new Deno.Command('text2pcap', {
+    //     args: ['-D', '-T', '6121,10000', '-t', 'ISO', '-', pcapOutPath],
+    //     stdin: 'piped',
+    //     stdout: 'inherit',
+    //     stderr: 'inherit',
+    //   }).spawn();
+    //   // const packetFlow =
+    //     merge(
+    //       tees.inbound[1].pipeThrough(map(x => ({dir: 'I', date: new Date(), data: x}))),
+    //       tees.outbound[1].pipeThrough(map(x => ({dir: 'O', date: new Date(), data: x}))),
+    //     )
+    //     .pipeThrough(map(x => `${x.dir} ${x.date.toISOString()}\n000000 ${bytesAsHex(x.data)}\n`))
+    //     // .pipeThrough(forEach(x => console.error(x)))
+    //     .pipeThrough(new TextEncoderStream())
+    //     .pipeTo(text2pcap.stdin);//.then(() => console.error('closed'));
+    //   // text2pcap.status;
+    //   // teePromise = Promise.all([packetFlow, text2pcap.status]);
+    // }
 
     const networkSocket = {
       readable: directions.inbound,

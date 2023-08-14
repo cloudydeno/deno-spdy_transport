@@ -1,47 +1,43 @@
-# spdy-transport
-
-[![Build Status](https://travis-ci.org/spdy-http2/spdy-transport.svg?branch=master)](http://travis-ci.org/spdy-http2/spdy-transport)
-[![NPM version](https://badge.fury.io/js/spdy-transport.svg)](http://badge.fury.io/js/spdy-transport)
-[![dependencies Status](https://david-dm.org/spdy-http2/spdy-transport/status.svg?style=flat-square)](https://david-dm.org/spdy-http2/spdy-transport)
-[![Standard - JavaScript Style Guide](https://img.shields.io/badge/code_style-standard-brightgreen.svg?style=flat-square)](http://standardjs.com/)
-[![Waffle](https://img.shields.io/badge/track-waffle-blue.svg?style=flat-square)](https://waffle.io/spdy-http2/node-spdy)
+# /x/spdy_transport
 
 > SPDY/HTTP2 generic transport implementation.
+> Now ported to Deno, because Kubernetes.
 
 ## Usage
 
 ```javascript
-var transport = require('spdy-transport');
+import { Connection } from "https://deno.land/x/spdy_transport/mod.ts";
 
-// NOTE: socket is some stream or net.Socket instance, may be an argument
-// of `net.createServer`'s connection handler.
+// NOTE: socket is a readable/writable pair like from Deno.connectTls().
 
-var server = transport.connection.create(socket, {
+// Handshake with the server
+var client = new Connection(socket, {
   protocol: 'http2',
-  isServer: true
+  isServer: false,
 });
+client.start(4); // sends preface
 
-server.on('stream', function(stream) {
-  console.log(stream.method, stream.path, stream.headers);
-  stream.respond(200, {
-    header: 'value'
-  });
-
-  stream.on('readable', function() {
-    var chunk = stream.read();
-    if (!chunk)
-      return;
-
-    console.log(chunk);
-  });
-
-  stream.on('end', function() {
-    console.log('end');
-  });
-
-  // And other node.js Stream APIs
-  // ...
+// Initiate a request stream
+const stream = await client.request({
+  method: 'GET',
+  path: '/',
+  host: 'example.com',
+  writable: true,
+  readable: true,
 });
+stream.writable.close();
+
+// Receive the response headers
+const response = await new Promise(ok => {
+  stream.once('response', (status, headers) => {
+    ok({ status, headers });
+  });
+});
+console.error('HTTP', response.status);
+
+// Receive the response body
+const text = await new Response(stream.readable).text();
+console.log(text);
 ```
 
 ## LICENSE

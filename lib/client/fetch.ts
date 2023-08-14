@@ -9,16 +9,11 @@ const socket = await Deno.connectTls({
   alpnProtocols: ['h2'],
 });
 
-const client = new Connection({
-  readable: socket.readable,
-  writable: socket.writable,
-}, {
+const client = new Connection(socket, {
   protocol: 'http2',
   isServer: false,
 });
-
 client.start(4); // sends preface
-console.error('Got conn')
 
 const searchStr = url.searchParams.toString();
 const stream = await client.request({
@@ -26,13 +21,13 @@ const stream = await client.request({
   path: `${url.pathname}${searchStr ? `?${searchStr}` : ''}`,
   host: url.host,
   headers: {
-    // 'user-agent': 'test dan',
+    'user-agent': 'test dan',
   },
   writable: true,
   readable: true,
 });
 stream.writable.close();
-console.error('Got stream')
+
 const response = await new Promise(ok => {
   stream.once('response', (status, headers) => {
     ok({ status, headers });
@@ -46,7 +41,4 @@ console.error('done')
 
 // stream.destroy
 // client.end();
-setTimeout(() => {
-  console.error('local timeout')
-  Deno.exit()
-}, 1000)
+Deno.exit();

@@ -40,3 +40,6 @@ jobs:
 
     - name: Run tests
       run: time deno test test/spdy/v3-parser-test.ts
+
+    - name: Perform HTTP/2 request
+      run: time ./lib/client/fetch.ts https://danopia.net
